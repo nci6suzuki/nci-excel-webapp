@@ -120,7 +120,7 @@ export async function POST(req) {
             // try resolve staff_id via exact staff_name+branch
             let staff_id = null;
             if (r.staff_name) {
-              const q = db.prepare('SELECT staff_id FROM staff WHERE staff_name=? AND (branch=? OR ?="") ORDER BY join_date DESC LIMIT 1').get(r.staff_name, r.branch || branchHint, r.branch || branchHint);
+              const q = db.prepare(`SELECT staff_id FROM staff WHERE staff_name=? AND (branch=? OR ?='') ORDER BY join_date DESC LIMIT 1`).get(r.staff_name, r.branch || branchHint, r.branch || branchHint);
               staff_id = q?.staff_id ?? null;
             }
             insertPerf.run({

@@ -1,20 +1,37 @@
+import Link from 'next/link';
+import './globals.css';
+
 export const metadata = {
   title: 'NCI 人員マップ Web',
-  description: 'Excel（マップ図/入退社/個人別実績/稼働人員変動）を崩さずに連動させてWeb表示するMVP',
+  description: '陣立て表ドリブン 人員マップ＆個人実績 Webアプリ',
 };
+
+const navItems = [
+  ['/', 'ダッシュボード'],
+  ['/pipeline', '陣立て表'],
+  ['/map', 'マップ図'],
+  ['/ledger', '入退社台帳'],
+  ['/performance', '個人実績'],
+  ['/headcount', '稼働人員変動'],
+  ['/masters', 'マスタ'],
+  ['/io', '取込/出力'],
+];
 
 export default function RootLayout({ children }) {
   return (
     <html lang="ja">
-      <body style={{ fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Noto Sans JP", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif', margin: 0 }}>
-        <div style={{ borderBottom: '1px solid #e5e7eb', padding: '12px 16px', display: 'flex', gap: 12, alignItems: 'center' }}>
-          <a href="/" style={{ textDecoration: 'none', color: '#111827', fontWeight: 800 }}>NCI 人員マップ Web</a>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 12 }}>
-            <a href="/map" style={{ textDecoration: 'none', color: '#111827' }}>マップ</a>
-            <a href="/performance" style={{ textDecoration: 'none', color: '#111827' }}>個人実績</a>
+      <body>
+        <header className="topbar">
+          <div className="topbar-inner">
+            <Link href="/" className="brand">NCI 人員マップ Web</Link>
+            <nav className="nav">
+              {navItems.map(([href, label]) => (
+                <Link key={href} href={href}>{label}</Link>
+              ))}
+            </nav>
           </div>
-        </div>
-        <div style={{ padding: 16 }}>{children}</div>
+        </header>
+        <main className="shell">{children}</main>
       </body>
     </html>
   );
