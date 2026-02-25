@@ -1,5 +1,6 @@
 import { getDb } from '../../lib/db.js';
 import StatusCell from '../../lib/ui/StatusCell.js';
+import PipelineRowForm from '../../lib/ui/PipelineRowForm.js';
 import { computeFiscalMonths, statusLabel } from '../../lib/pipeline.js';
 
 function groupBySection(rows) {
@@ -94,6 +95,16 @@ export default function PipelinePage({ searchParams }) {
           <select name="branch" defaultValue={branch}>{branches.map((b) => <option key={b} value={b}>{b}</option>)}</select>
           <button>表示</button>
         </form>
+      </section>
+
+      <section className="panel" style={{ padding: 16 }}>
+        <h2 style={{ marginTop: 0, marginBottom: 10 }}>陣立て表 入力</h2>
+        <PipelineRowForm
+          months={months}
+          branches={branches}
+          defaultMonth={month}
+          defaultBranch={branch}
+        />
       </section>
 
       <section className="card-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
