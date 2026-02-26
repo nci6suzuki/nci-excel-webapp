@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getDb } from '../../../../lib/db.js';
 import { computeFiscalMonths, normalizeJinSection } from '../../../../lib/pipeline.js';
+import { upsertRows } from '../../../../lib/supabaseSync.js';
 
 const schema = z.object({
   target_month: z.string().regex(/^\d{4}-\d{2}$/),
@@ -34,20 +35,7 @@ export async function POST(req) {
     const now = new Date().toISOString();
     const id = `row-${crypto.randomUUID()}`;
 
-    const db = getDb();
-    db.prepare(`
-      INSERT INTO jin_date_rows (
-        id, year_term, target_month, branch, section, case_type, rank,
-        staff_name, client_name, hope, tour_date, manager_name, selection,
-        start_date, leave_date, rework, next_job, leave_reason, memo, status,
-        created_by, updated_by, created_at, updated_at
-      ) VALUES (
-        @id, @year_term, @target_month, @branch, @section, @case_type, @rank,
-        @staff_name, @client_name, @hope, @tour_date, @manager_name, @selection,
-        @start_date, @leave_date, @rework, @next_job, @leave_reason, @memo, @status,
-        @created_by, @updated_by, @created_at, @updated_at
-      )
-    `).run({
+    const payload = {
       id,
       year_term: '第15期',
       target_month: body.target_month,
@@ -72,8 +60,24 @@ export async function POST(req) {
       updated_by: 'web-user',
       created_at: now,
       updated_at: now,
-    });
+    };
 
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO jin_date_rows (
+        id, year_term, target_month, branch, section, case_type, rank,
+        staff_name, client_name, hope, tour_date, manager_name, selection,
+        start_date, leave_date, rework, next_job, leave_reason, memo, status,
+        created_by, updated_by, created_at, updated_at
+      ) VALUES (
+        @id, @year_term, @target_month, @branch, @section, @case_type, @rank,
+        @staff_name, @client_name, @hope, @tour_date, @manager_name, @selection,
+        @start_date, @leave_date, @rework, @next_job, @leave_reason, @memo, @status,
+        @created_by, @updated_by, @created_at, @updated_at
+      )
+    `).run(payload);
+
+    await upsertRows('jin_date_rows', [payload], 'id');
     return NextResponse.json({ ok: true, id, section });
   } catch (e) {
     return NextResponse.json({ error: String(e?.message || e) }, { status: 400 });

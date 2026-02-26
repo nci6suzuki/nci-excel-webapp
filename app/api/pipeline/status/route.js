@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getDb } from '../../../../lib/db.js';
 import { normalizeJinSection } from '../../../../lib/pipeline.js';
+import { updateRow } from '../../../../lib/supabaseSync.js';
 
 const schema = z.object({
   id: z.string().min(1),
@@ -23,6 +24,14 @@ export async function POST(req) {
     const db = getDb();
     const currentMonth = body.target_month;
     const section = normalizeJinSection(body.status, body.target_month, currentMonth);
+    const patch = {
+      status: body.status,
+      section,
+      updated_by: body.updated_by,
+      updated_at: new Date().toISOString(),
+      leave_date: body.leave_date ?? null,
+      start_date: body.start_date ?? null,
+    };
     db.prepare(`
       UPDATE jin_date_rows
       SET status=@status,
@@ -34,12 +43,13 @@ export async function POST(req) {
       WHERE id=@id
     `).run({
       id: body.id,
-      status: body.status,
-      section,
-      updated_by: body.updated_by,
-      updated_at: new Date().toISOString(),
-      leave_date: body.leave_date ?? null,
-      start_date: body.start_date ?? null,
+      ...patch,
+    });
+
+    await updateRow('jin_date_rows', { id: body.id }, {
+      ...patch,
+      leave_date: body.leave_date,
+      start_date: body.start_date,
     });
 
     return NextResponse.json({ ok: true, section });

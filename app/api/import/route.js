@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { getDb } from '../../../lib/db.js';
 import { importMapWorkbook, importPerformanceWorkbook, importHeadcountWorkbook, guessBranchFromFilename } from '../../../lib/excel/importers.js';
+import { replaceTableRows, upsertRows } from '../../../lib/supabaseSync.js';
 
 export const runtime = 'nodejs';
 
@@ -33,6 +34,12 @@ export async function POST(req) {
     let totalAssign = 0;
     let totalPerf = 0;
     let totalHC = 0;
+
+    const supabaseStaffRows = [];
+    const supabaseAssignmentRows = [];
+    const supabasePerformanceRows = [];
+    const supabaseHeadcountRows = [];
+    const supabaseImportRows = [];
 
     const upsertStaff = db.prepare(`
       INSERT INTO staff(staff_id, branch, sales_name, staff_name, gender, employment_type, retire_risk, join_date, leave_date)
@@ -85,7 +92,7 @@ export async function POST(req) {
         const { rows } = importMapWorkbook(buf, filename);
         const tx = db.transaction((rows) => {
           for (const r of rows) {
-            upsertStaff.run({
+            const staffPayload = {
               staff_id: r.staff_id,
               branch: r.branch,
               sales_name: r.sales_name,
@@ -95,16 +102,20 @@ export async function POST(req) {
               retire_risk: r.retire_risk,
               join_date: r.join_date,
               leave_date: r.leave_date
-            });
+            };
+            upsertStaff.run(staffPayload);
+            supabaseStaffRows.push(staffPayload);
             totalStaff++;
             if (r.client_name) {
-              upsertAssign.run({
+              const assignmentPayload = {
                 staff_id: r.staff_id,
                 client_name: r.client_name,
                 branch: r.branch,
                 sales_name: r.sales_name,
                 active: r.leave_date ? 0 : 1
-              });
+              };
+              upsertAssign.run(assignmentPayload);
+              supabaseAssignmentRows.push(assignmentPayload);
               totalAssign++;
             }
           }
@@ -123,7 +134,7 @@ export async function POST(req) {
               const q = db.prepare(`SELECT staff_id FROM staff WHERE staff_name=? AND (branch=? OR ?='') ORDER BY join_date DESC LIMIT 1`).get(r.staff_name, r.branch || branchHint, r.branch || branchHint);
               staff_id = q?.staff_id ?? null;
             }
-            insertPerf.run({
+            const perfPayload = {
               branch: r.branch || branchHint,
               month: r.month,
               sales_name: r.sales_name,
@@ -132,7 +143,9 @@ export async function POST(req) {
               metric_key: r.metric_key,
               metric_value: r.metric_value,
               raw_row_json: JSON.stringify(r)
-            });
+            };
+            insertPerf.run(perfPayload);
+            supabasePerformanceRows.push(perfPayload);
             totalPerf++;
           }
         });
@@ -143,21 +156,31 @@ export async function POST(req) {
         const { rows } = importHeadcountWorkbook(buf, filename);
         const tx = db.transaction((rows) => {
           for (const r of rows) {
-            insertHC.run({
+            const hcPayload = {
               month: r.month,
               branch: r.branch,
               metric_key: r.metric_key,
               metric_value: r.metric_value,
               raw_row_json: JSON.stringify(r)
-            });
+            };
+            insertHC.run(hcPayload);
+            supabaseHeadcountRows.push(hcPayload);
             totalHC++;
           }
         });
         tx(rows);
       }
 
-      insertImport.run({ filename, kind, imported_at: new Date().toISOString() });
+      const importPayload = { filename, kind, imported_at: new Date().toISOString() };
+      insertImport.run(importPayload);
+      supabaseImportRows.push(importPayload);
     }
+
+    await upsertRows('staff', supabaseStaffRows, 'staff_id');
+    await upsertRows('assignments', supabaseAssignmentRows, 'staff_id,client_name,branch,sales_name');
+    await replaceTableRows('performance', supabasePerformanceRows);
+    await replaceTableRows('headcount_changes', supabaseHeadcountRows);
+    await upsertRows('imports', supabaseImportRows); 
 
     const summary = `staff ${totalStaff}件 / assignment ${totalAssign}件 / performance ${totalPerf}件 / headcount ${totalHC}件`;
     return NextResponse.json({ ok: true, summary });
