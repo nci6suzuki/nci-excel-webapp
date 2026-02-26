@@ -1,29 +1,39 @@
 export const dynamic = 'force-dynamic';
 import { computeFiscalMonths } from '../../lib/pipeline.js';
-import { parseYearMonth, supabaseRest } from '../../lib/supabase.js';
+import { getDb } from '../../lib/db.js';
+import { isSupabaseConfigured, parseYearMonth, supabaseRest } from '../../lib/supabase.js';
 
 export default async function MapPage({ searchParams }) {
   const months = computeFiscalMonths(new Date());
   const month = searchParams?.month || months[0];
   const parsed = parseYearMonth(month);
+  const useSupabase = isSupabaseConfigured();
 
-  const branchRows = await supabaseRest('branches', {
-    query: { select: 'name', is_active: 'eq.true', order: 'sort_order.asc,name.asc' },
-  });
-  const branches = branchRows.map((r) => r.name);
+  const branches = useSupabase
+    ? (await supabaseRest('branches', {
+        query: { select: 'name', is_active: 'eq.true', order: 'sort_order.asc,name.asc' },
+      })).map((r) => r.name)
+    : getDb().prepare('SELECT name FROM branch_master ORDER BY sort_order ASC, name ASC').all().map((r) => r.name);
   const branch = searchParams?.branch || branches[0] || '未設定';
 
   const rows = parsed
-    ? await supabaseRest('jin_date_rows', {
-        query: {
-          select: 'branch_name,manager_name,client_name,leave_client_name,staff_name,status',
-          target_year: `eq.${parsed.year}`,
-          target_month: `eq.${parsed.month}`,
-          branch_name: `eq.${branch}`,
-          status: 'in.(offer,active,leave_notice)',
-          order: 'manager_name.asc,client_name.asc,staff_name.asc',
-        },
-      })
+    ? useSupabase
+      ? await supabaseRest('jin_date_rows', {
+          query: {
+            select: 'branch_name,manager_name,client_name,leave_client_name,staff_name,status',
+            target_year: `eq.${parsed.year}`,
+            target_month: `eq.${parsed.month}`,
+            branch_name: `eq.${branch}`,
+            status: 'in.(offer,active,leave_notice)',
+            order: 'manager_name.asc,client_name.asc,staff_name.asc',
+          },
+        })
+      : getDb().prepare(`
+          SELECT branch AS branch_name, manager_name, client_name, '' AS leave_client_name, staff_name, status
+          FROM jin_date_rows
+          WHERE target_month = ? AND branch = ? AND status IN ('offer','active','leave_notice')
+          ORDER BY manager_name ASC, client_name ASC, staff_name ASC
+        `).all(month, branch)
     : [];
 
   const managerMap = new Map();

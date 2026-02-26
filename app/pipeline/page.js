@@ -2,7 +2,8 @@ export const dynamic = 'force-dynamic';
 import StatusCell from '../../lib/ui/StatusCell.js';
 import PipelineRowForm from '../../lib/ui/PipelineRowForm.js';
 import { computeFiscalMonths, statusLabel } from '../../lib/pipeline.js';
-import { parseYearMonth, supabaseRest } from '../../lib/supabase.js';
+import { getDb } from '../../lib/db.js';
+import { isSupabaseConfigured, parseYearMonth, supabaseRest } from '../../lib/supabase.js';
 
 function groupBySection(rows) {
   return rows.reduce((acc, row) => {
@@ -38,22 +39,32 @@ function renderRows(rows, columns, month) {
 
 export default async function PipelinePage({ searchParams }) {
   const months = computeFiscalMonths(new Date());
-  const branchRows = await supabaseRest('branches', { query: { select: 'name', is_active: 'eq.true', order: 'sort_order.asc,name.asc' } });
-  const branches = branchRows.map((r) => r.name);
+  const useSupabase = isSupabaseConfigured();
+  const branches = useSupabase
+    ? (await supabaseRest('branches', { query: { select: 'name', is_active: 'eq.true', order: 'sort_order.asc,name.asc' } })).map((r) => r.name)
+    : getDb().prepare('SELECT name FROM branch_master ORDER BY sort_order ASC, name ASC').all().map((r) => r.name);
   const month = searchParams?.month || months[0];
   const branch = searchParams?.branch || branches[0] || '未設定';
   const parsed = parseYearMonth(month);
 
   const rows = parsed
-    ? await supabaseRest('jin_date_rows', {
-        query: {
-          select: 'id,section,case_type,rank,staff_name,client_name,hope,tour_date,manager_name,selection_text,start_date,leave_client_name,leave_date,rework_text,next_job,leave_reason,memo,status',
-          target_year: `eq.${parsed.year}`,
-          target_month: `eq.${parsed.month}`,
-          branch_name: `eq.${branch}`,
-          order: 'manager_name.asc,client_name.asc,staff_name.asc',
-        },
-      })
+    ? useSupabase
+      ? await supabaseRest('jin_date_rows', {
+          query: {
+            select: 'id,section,case_type,rank,staff_name,client_name,hope,tour_date,manager_name,selection_text,start_date,leave_client_name,leave_date,rework_text,next_job,leave_reason,memo,status',
+            target_year: `eq.${parsed.year}`,
+            target_month: `eq.${parsed.month}`,
+            branch_name: `eq.${branch}`,
+            order: 'manager_name.asc,client_name.asc,staff_name.asc',
+          },
+        })
+      : getDb().prepare(`
+          SELECT id, section, case_type, rank, staff_name, client_name, hope, tour_date, manager_name,
+                 selection, start_date, leave_date, rework, next_job, leave_reason, memo, status
+          FROM jin_date_rows
+          WHERE target_month = ? AND branch = ?
+          ORDER BY manager_name ASC, client_name ASC, staff_name ASC
+        `).all(month, branch)
     : [];
 
   const normalizedRows = rows.map((r) => ({

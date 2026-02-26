@@ -1,19 +1,41 @@
 export const dynamic = 'force-dynamic';
 import BranchMasterPanel from '../../lib/ui/BranchMasterPanel.js';
-import { supabaseRest } from '../../lib/supabase.js';
+import { getDb } from '../../lib/db.js';
+import { isSupabaseConfigured, supabaseRest } from '../../lib/supabase.js';
 
 export default async function MastersPage() {
-  const branches = (await supabaseRest('branches', {
-    query: { select: 'name', is_active: 'eq.true', order: 'sort_order.asc,name.asc' },
-  })).map((r) => r.name);
+  const useSupabase = isSupabaseConfigured();
+  const db = useSupabase ? null : getDb();
 
-  const managers = (await supabaseRest('managers', {
-    query: { select: 'name', is_active: 'eq.true', order: 'name.asc', limit: '200' },
-  })).map((r) => r.name);
+  const branches = useSupabase
+    ? (await supabaseRest('branches', {
+        query: { select: 'name', is_active: 'eq.true', order: 'sort_order.asc,name.asc' },
+      })).map((r) => r.name)
+    : db.prepare('SELECT name FROM branch_master ORDER BY sort_order ASC, name ASC').all().map((r) => r.name);
 
-  const clients = (await supabaseRest('clients', {
-    query: { select: 'name', is_active: 'eq.true', order: 'name.asc', limit: '200' },
-  })).map((r) => r.name);
+  const managers = useSupabase
+    ? (await supabaseRest('managers', {
+        query: { select: 'name', is_active: 'eq.true', order: 'name.asc', limit: '200' },
+      })).map((r) => r.name)
+    : db.prepare(`
+        SELECT DISTINCT sales_name AS name
+        FROM staff
+        WHERE sales_name IS NOT NULL AND sales_name <> ''
+        ORDER BY sales_name ASC
+        LIMIT 200
+      `).all().map((r) => r.name);
+
+  const clients = useSupabase
+    ? (await supabaseRest('clients', {
+        query: { select: 'name', is_active: 'eq.true', order: 'name.asc', limit: '200' },
+      })).map((r) => r.name)
+    : db.prepare(`
+        SELECT DISTINCT client_name AS name
+        FROM assignments
+        WHERE client_name IS NOT NULL AND client_name <> ''
+        ORDER BY client_name ASC
+        LIMIT 200
+      `).all().map((r) => r.name);
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
