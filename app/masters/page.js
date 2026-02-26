@@ -1,11 +1,19 @@
-import { getDb, listBranches } from '../../lib/db.js';
+export const dynamic = 'force-dynamic';
 import BranchMasterPanel from '../../lib/ui/BranchMasterPanel.js';
+import { supabaseRest } from '../../lib/supabase.js';
 
-export default function MastersPage() {
-  const db = getDb();
-  const branches = listBranches(db);
-  const managers = db.prepare(`SELECT DISTINCT sales_name FROM staff WHERE sales_name IS NOT NULL AND sales_name<>'' ORDER BY sales_name`).all().map((r) => r.sales_name);
-  const clients = db.prepare(`SELECT DISTINCT client_name FROM assignments WHERE client_name IS NOT NULL AND client_name<>'' ORDER BY client_name LIMIT 200`).all().map((r) => r.client_name);
+export default async function MastersPage() {
+  const branches = (await supabaseRest('branches', {
+    query: { select: 'name', is_active: 'eq.true', order: 'sort_order.asc,name.asc' },
+  })).map((r) => r.name);
+
+  const managers = (await supabaseRest('managers', {
+    query: { select: 'name', is_active: 'eq.true', order: 'name.asc', limit: '200' },
+  })).map((r) => r.name);
+
+  const clients = (await supabaseRest('clients', {
+    query: { select: 'name', is_active: 'eq.true', order: 'name.asc', limit: '200' },
+  })).map((r) => r.name);
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>

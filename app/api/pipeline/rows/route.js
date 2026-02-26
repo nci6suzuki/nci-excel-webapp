@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getDb } from '../../../../lib/db.js';
 import { computeFiscalMonths, normalizeJinSection } from '../../../../lib/pipeline.js';
-import { upsertRows } from '../../../../lib/supabaseSync.js';
+import { ensureBranch, findManagerId, mapCaseTypeToEnum, parseYearMonth, supabaseRest } from '../../../../lib/supabase.js';
 
 const schema = z.object({
   target_month: z.string().regex(/^\d{4}-\d{2}$/),
@@ -30,55 +29,49 @@ function toIsoDate(value) {
 export async function POST(req) {
   try {
     const body = schema.parse(await req.json());
+    const month = parseYearMonth(body.target_month);
+    if (!month) return NextResponse.json({ error: 'target_month is invalid' }, { status: 400 });
+
     const activeMonth = computeFiscalMonths(new Date())[0];
     const section = normalizeJinSection(body.status, body.target_month, activeMonth);
-    const now = new Date().toISOString();
-    const id = `row-${crypto.randomUUID()}`;
+    const branch = await ensureBranch(body.branch);
+    const managerId = await findManagerId(body.manager_name);
 
     const payload = {
-      id,
-      year_term: '第15期',
-      target_month: body.target_month,
-      branch: body.branch,
+      term_label: '第15期',
+      target_year: month.year,
+      target_month: month.month,
+      branch_id: branch.id,
+      branch_name: body.branch,
       section,
-      case_type: body.case_type || '新規案件',
+      case_type: mapCaseTypeToEnum(body.case_type || 'new_case'),
       rank: body.rank || null,
       staff_name: body.staff_name,
+      manager_id: managerId,
+      manager_name: body.manager_name || '未設定',
+      memo: body.memo || null,
       client_name: body.client_name || null,
       hope: body.hope || null,
       tour_date: toIsoDate(body.tour_date),
-      manager_name: body.manager_name || null,
-      selection: body.selection || null,
+      selection_text: body.selection || null,
       start_date: toIsoDate(body.start_date),
+      leave_client_name: body.client_name || null,
       leave_date: toIsoDate(body.leave_date),
-      rework: null,
+      rework_text: null,
       next_job: null,
       leave_reason: null,
-      memo: body.memo || null,
       status: body.status,
       created_by: 'web-user',
       updated_by: 'web-user',
-      created_at: now,
-      updated_at: now,
     };
 
-    const db = getDb();
-    db.prepare(`
-      INSERT INTO jin_date_rows (
-        id, year_term, target_month, branch, section, case_type, rank,
-        staff_name, client_name, hope, tour_date, manager_name, selection,
-        start_date, leave_date, rework, next_job, leave_reason, memo, status,
-        created_by, updated_by, created_at, updated_at
-      ) VALUES (
-        @id, @year_term, @target_month, @branch, @section, @case_type, @rank,
-        @staff_name, @client_name, @hope, @tour_date, @manager_name, @selection,
-        @start_date, @leave_date, @rework, @next_job, @leave_reason, @memo, @status,
-        @created_by, @updated_by, @created_at, @updated_at
-      )
-    `).run(payload);
+    const inserted = await supabaseRest('jin_date_rows', {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: [payload],
+    });
 
-    await upsertRows('jin_date_rows', [payload], 'id');
-    return NextResponse.json({ ok: true, id, section });
+    return NextResponse.json({ ok: true, id: inserted?.[0]?.id, section });
   } catch (e) {
     return NextResponse.json({ error: String(e?.message || e) }, { status: 400 });
   }
