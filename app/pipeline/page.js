@@ -1,4 +1,4 @@
-import { getDb } from '../../lib/db.js';
+import { getDb, listBranches } from '../../lib/db.js';
 import StatusCell from '../../lib/ui/StatusCell.js';
 import PipelineRowForm from '../../lib/ui/PipelineRowForm.js';
 import { computeFiscalMonths, statusLabel } from '../../lib/pipeline.js';
@@ -38,7 +38,7 @@ function renderRows(rows, columns, month) {
 export default function PipelinePage({ searchParams }) {
   const db = getDb();
   const months = computeFiscalMonths(new Date());
-  const branches = db.prepare(`SELECT DISTINCT branch FROM jin_date_rows ORDER BY branch`).all().map((r) => r.branch);
+  const branches = listBranches(db);
   const month = searchParams?.month || months[0];
   const branch = searchParams?.branch || branches[0] || '未設定';
 

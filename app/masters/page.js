@@ -1,8 +1,9 @@
-import { getDb } from '../../lib/db.js';
+import { getDb, listBranches } from '../../lib/db.js';
+import BranchMasterPanel from '../../lib/ui/BranchMasterPanel.js';
 
 export default function MastersPage() {
   const db = getDb();
-  const branches = db.prepare(`SELECT DISTINCT branch FROM staff WHERE branch IS NOT NULL AND branch<>'' ORDER BY branch`).all().map((r) => r.branch);
+  const branches = listBranches(db);
   const managers = db.prepare(`SELECT DISTINCT sales_name FROM staff WHERE sales_name IS NOT NULL AND sales_name<>'' ORDER BY sales_name`).all().map((r) => r.sales_name);
   const clients = db.prepare(`SELECT DISTINCT client_name FROM assignments WHERE client_name IS NOT NULL AND client_name<>'' ORDER BY client_name LIMIT 200`).all().map((r) => r.client_name);
 
@@ -14,7 +15,7 @@ export default function MastersPage() {
       </section>
 
       <section className="card-grid">
-        <article className="panel" style={{ padding: 14 }}><h3 className="section-title">支店マスタ</h3>{branches.map((b) => <div key={b}>{b}</div>)}</article>
+        <BranchMasterPanel initialBranches={branches} />
         <article className="panel" style={{ padding: 14 }}><h3 className="section-title">担当マスタ</h3>{managers.slice(0, 30).map((m) => <div key={m}>{m}</div>)}</article>
         <article className="panel" style={{ padding: 14 }}><h3 className="section-title">クライアント（上位200件）</h3>{clients.slice(0, 30).map((c) => <div key={c}>{c}</div>)}</article>
       </section>
