@@ -91,6 +91,14 @@ type DailyResult = {
   } | null
 }
 
+type CurrentUserRole = {
+  user_id: string
+  name: string | null
+  role: 'admin' | 'manager' | 'user'
+  branch_id: string | null
+  sales_user_id: string | null
+}
+
 const certaintyOptions = ['確定', 'A見込み', 'B見込み', 'C見込み']
 const entryStatusOptions = ['予定', '確定', '入職済み', '取消']
 const selectionStatusOptions = [
@@ -168,6 +176,9 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
   const [monthlyPlansForUsers, setMonthlyPlansForUsers] = useState<MonthlyPlan[]>([])
   const [message, setMessage] = useState('')
 
+  const [currentUserRole, setCurrentUserRole] = useState<CurrentUserRole | null>(null)
+  const [authLoading, setAuthLoading] = useState(true)
+
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null)
   const [editingExitId, setEditingExitId] = useState<string | null>(null)
   const [editingDailyResultId, setEditingDailyResultId] = useState<string | null>(null)
@@ -207,8 +218,13 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
   })
 
   useEffect(() => {
-    fetchBranches()
+    fetchCurrentUserRole()
   }, [])
+
+  useEffect(() => {
+    if (!currentUserRole) return
+    fetchBranches()
+  }, [currentUserRole])
 
   useEffect(() => {
     if (!selectedBranchId) return
@@ -216,22 +232,26 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
     fetchSalesUsers(selectedBranchId)
     fetchCompanies(selectedBranchId)
 
-    setSelectedSalesUserId('')
+    const fixedSalesUserId = currentUserRole?.role === 'user'
+      ? currentUserRole.sales_user_id ?? ''
+      : ''
+
+    setSelectedSalesUserId(fixedSalesUserId)
     setEntryForm((prev) => ({
       ...prev,
-      sales_user_id: '',
+      sales_user_id: fixedSalesUserId,
       company_id: '',
     }))
     setExitForm((prev) => ({
       ...prev,
-      sales_user_id: '',
+      sales_user_id: fixedSalesUserId,
       company_id: '',
     }))
     setDailyResultForm((prev) => ({
       ...prev,
-      sales_user_id: '',
+      sales_user_id: fixedSalesUserId,
     }))
-  }, [selectedBranchId])
+  }, [selectedBranchId, currentUserRole])
 
   useEffect(() => {
     if (!selectedBranchId || !targetMonth) return
@@ -242,12 +262,85 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
     fetchDailyResults()
   }, [selectedBranchId, selectedSalesUserId, targetMonth])
 
-  async function fetchBranches() {
+  async function fetchCurrentUserRole() {
+    setAuthLoading(true)
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
+
+    if (userError) {
+      console.error('auth user error:', userError)
+      setMessage(`ログイン情報の取得に失敗しました：${userError.message}`)
+      setAuthLoading(false)
+      return
+    }
+
+    if (!user) {
+      setMessage('ログインユーザーが確認できません。')
+      setAuthLoading(false)
+      return
+    }
+
     const { data, error } = await supabase
+      .from('user_roles')
+      .select('user_id, name, role, branch_id, sales_user_id')
+      .eq('user_id', user.id)
+      .eq('is_active', true)
+      .maybeSingle()
+
+    if (error) {
+      console.error('user role fetch error:', error)
+      setMessage(`権限情報の取得に失敗しました：${error.message}`)
+      setAuthLoading(false)
+      return
+    }
+
+    if (!data) {
+      setMessage('このユーザーの権限情報が登録されていません。')
+      setAuthLoading(false)
+      return
+    }
+
+    const roleData = data as CurrentUserRole
+    setCurrentUserRole(roleData)
+
+    if (roleData.role !== 'admin' && roleData.branch_id) {
+      setSelectedBranchId(roleData.branch_id)
+    }
+
+    if (roleData.role === 'user' && roleData.sales_user_id) {
+      setSelectedSalesUserId(roleData.sales_user_id)
+      setEntryForm((prev) => ({
+        ...prev,
+        sales_user_id: roleData.sales_user_id ?? '',
+      }))
+      setExitForm((prev) => ({
+        ...prev,
+        sales_user_id: roleData.sales_user_id ?? '',
+      }))
+      setDailyResultForm((prev) => ({
+        ...prev,
+        sales_user_id: roleData.sales_user_id ?? '',
+      }))
+    }
+
+    setAuthLoading(false)
+  }
+
+  async function fetchBranches() {
+    let query = supabase
       .from('branches')
       .select('id, branch_name')
       .eq('is_active', true)
       .order('display_order', { ascending: true })
+
+    if (currentUserRole && currentUserRole.role !== 'admin' && currentUserRole.branch_id) {
+      query = query.eq('id', currentUserRole.branch_id)
+    }
+
+    const { data, error } = await query
 
     if (error) {
       console.error(error)
@@ -258,17 +351,27 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
     setBranches(data ?? [])
 
     if (data && data.length > 0) {
-      setSelectedBranchId(data[0].id)
+      if (currentUserRole?.role !== 'admin' && currentUserRole?.branch_id) {
+        setSelectedBranchId(currentUserRole.branch_id)
+      } else {
+        setSelectedBranchId(data[0].id)
+      }
     }
   }
 
   async function fetchSalesUsers(branchId: string) {
-    const { data, error } = await supabase
+    let query = supabase
       .from('sales_users')
       .select('id, name, branch_id, role')
       .eq('branch_id', branchId)
       .eq('is_active', true)
       .order('display_order', { ascending: true })
+
+    if (currentUserRole?.role === 'user' && currentUserRole.sales_user_id) {
+      query = query.eq('id', currentUserRole.sales_user_id)
+    }
+
+    const { data, error } = await query
 
     if (error) {
       console.error(error)
@@ -277,6 +380,13 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
     }
 
     setSalesUsers(data ?? [])
+
+    if (currentUserRole?.role === 'user' && currentUserRole.sales_user_id) {
+      setSelectedSalesUserId(currentUserRole.sales_user_id)
+      setEntryForm((prev) => ({ ...prev, sales_user_id: currentUserRole.sales_user_id ?? '' }))
+      setExitForm((prev) => ({ ...prev, sales_user_id: currentUserRole.sales_user_id ?? '' }))
+      setDailyResultForm((prev) => ({ ...prev, sales_user_id: currentUserRole.sales_user_id ?? '' }))
+    }
   }
 
   async function fetchCompanies(branchId: string) {
@@ -1519,6 +1629,16 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
   const filteredCompaniesForEntry = companies
   const filteredCompaniesForExit = companies
 
+  if (authLoading) {
+    return (
+      <div className="p-4 md:p-8">
+        <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm">
+          権限情報を確認しています...
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
@@ -1537,6 +1657,18 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
           </div>
         )}
 
+        {currentUserRole && (
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
+            ログイン中：
+            <span className="ml-1 font-semibold text-slate-900">
+              {currentUserRole.name ?? '名称未設定'}
+            </span>
+            <span className="ml-3 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
+              {currentUserRole.role}
+            </span>
+          </div>
+        )}
+
         <section className="rounded-xl bg-white p-4 shadow-sm">
           <h2 className="mb-4 text-lg font-semibold text-gray-900">
             表示条件・月次PLAN
@@ -1550,7 +1682,8 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
               <select
                 value={selectedBranchId}
                 onChange={(e) => setSelectedBranchId(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                disabled={currentUserRole?.role !== 'admin'}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100 disabled:text-gray-500"
               >
                 {branches.map((branch) => (
                   <option key={branch.id} value={branch.id}>
@@ -1579,9 +1712,10 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
               <select
                 value={selectedSalesUserId}
                 onChange={(e) => setSelectedSalesUserId(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                disabled={currentUserRole?.role === 'user'}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100 disabled:text-gray-500"
               >
-                <option value="">全員</option>
+                {currentUserRole?.role !== 'user' && <option value="">全員</option>}
                 {salesUsers.map((user) => (
                   <option key={user.id} value={user.id}>
                     {user.name}
@@ -1822,7 +1956,8 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
                 label: user.name,
               }))}
               placeholder="選択してください"
-            />
+            
+                disabled={currentUserRole?.role === 'user'}/>
 
             <Input
               label="新規数"
@@ -2122,7 +2257,8 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
                   label: user.name,
                 }))}
                 placeholder="選択してください"
-              />
+              
+                disabled={currentUserRole?.role === 'user'}/>
 
               <Select
                 label="企業名"
@@ -2322,7 +2458,8 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
                   label: user.name,
                 }))}
                 placeholder="選択してください"
-              />
+              
+                disabled={currentUserRole?.role === 'user'}/>
 
               <Select
                 label="退職企業"
@@ -2598,12 +2735,14 @@ function Select({
   onChange,
   options,
   placeholder,
+  disabled = false,
 }: {
   label: string
   value: string
   onChange: (value: string) => void
   options: { value: string; label: string }[]
   placeholder?: string
+  disabled?: boolean
 }) {
   return (
     <div>
@@ -2613,7 +2752,8 @@ function Select({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+        disabled={disabled}
+        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100 disabled:text-gray-500"
       >
         {placeholder && <option value="">{placeholder}</option>}
         {options.map((option) => (
