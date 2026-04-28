@@ -44,6 +44,12 @@ type EntryPlan = {
   certainty_rank: string | null
   status: string | null
   memo: string | null
+  created_by: string | null
+  updated_by: string | null
+  canceled_by: string | null
+  created_at: string | null
+  updated_at: string | null
+  canceled_at: string | null
   companies?: {
     company_name: string
   } | null
@@ -64,6 +70,12 @@ type ExitPlan = {
   next_job: string | null
   status: string | null
   memo: string | null
+  created_by: string | null
+  updated_by: string | null
+  canceled_by: string | null
+  created_at: string | null
+  updated_at: string | null
+  canceled_at: string | null
   companies?: {
     company_name: string
   } | null
@@ -86,17 +98,15 @@ type DailyResult = {
   visit_count: number | null
   interview_count: number | null
   memo: string | null
+  created_by: string | null
+  updated_by: string | null
+  canceled_by: string | null
+  created_at: string | null
+  updated_at: string | null
+  canceled_at: string | null
   sales_users?: {
     name: string
   } | null
-}
-
-type CurrentUserRole = {
-  user_id: string
-  name: string | null
-  role: 'admin' | 'manager' | 'user'
-  branch_id: string | null
-  sales_user_id: string | null
 }
 
 const certaintyOptions = ['確定', 'A見込み', 'B見込み', 'C見込み']
@@ -152,6 +162,12 @@ function getTargetMonthDate(month: string) {
   return `${month}-01`
 }
 
+type AuditUserRole = {
+  user_id: string
+  name: string | null
+  email: string | null
+}
+
 type MonthlyHeadcountMode = 'input' | 'report' | 'list'
 
 export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcountMode }) {
@@ -174,10 +190,8 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
   const [loading, setLoading] = useState(false)
   const [savingPlan, setSavingPlan] = useState(false)
   const [monthlyPlansForUsers, setMonthlyPlansForUsers] = useState<MonthlyPlan[]>([])
+  const [auditUsers, setAuditUsers] = useState<AuditUserRole[]>([])
   const [message, setMessage] = useState('')
-
-  const [currentUserRole, setCurrentUserRole] = useState<CurrentUserRole | null>(null)
-  const [authLoading, setAuthLoading] = useState(true)
 
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null)
   const [editingExitId, setEditingExitId] = useState<string | null>(null)
@@ -218,13 +232,9 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
   })
 
   useEffect(() => {
-    fetchCurrentUserRole()
-  }, [])
-
-  useEffect(() => {
-    if (!currentUserRole) return
     fetchBranches()
-  }, [currentUserRole])
+    fetchAuditUsers()
+  }, [])
 
   useEffect(() => {
     if (!selectedBranchId) return
@@ -232,26 +242,22 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
     fetchSalesUsers(selectedBranchId)
     fetchCompanies(selectedBranchId)
 
-    const fixedSalesUserId = currentUserRole?.role === 'user'
-      ? currentUserRole.sales_user_id ?? ''
-      : ''
-
-    setSelectedSalesUserId(fixedSalesUserId)
+    setSelectedSalesUserId('')
     setEntryForm((prev) => ({
       ...prev,
-      sales_user_id: fixedSalesUserId,
+      sales_user_id: '',
       company_id: '',
     }))
     setExitForm((prev) => ({
       ...prev,
-      sales_user_id: fixedSalesUserId,
+      sales_user_id: '',
       company_id: '',
     }))
     setDailyResultForm((prev) => ({
       ...prev,
-      sales_user_id: fixedSalesUserId,
+      sales_user_id: '',
     }))
-  }, [selectedBranchId, currentUserRole])
+  }, [selectedBranchId])
 
   useEffect(() => {
     if (!selectedBranchId || !targetMonth) return
@@ -262,85 +268,54 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
     fetchDailyResults()
   }, [selectedBranchId, selectedSalesUserId, targetMonth])
 
-  async function fetchCurrentUserRole() {
-    setAuthLoading(true)
-
+  async function getCurrentAuthUserId() {
     const {
       data: { user },
-      error: userError,
+      error,
     } = await supabase.auth.getUser()
 
-    if (userError) {
-      console.error('auth user error:', userError)
-      setMessage(`ログイン情報の取得に失敗しました：${userError.message}`)
-      setAuthLoading(false)
-      return
+    if (error) {
+      console.error('auth user error:', error)
+      setMessage('ログイン情報の取得に失敗しました：' + error.message)
+      return null
     }
 
     if (!user) {
-      setMessage('ログインユーザーが確認できません。')
-      setAuthLoading(false)
-      return
+      setMessage('ログインユーザーが確認できません。/login からログインしてください。')
+      return null
     }
 
-    const { data, error } = await supabase
-      .from('user_roles')
-      .select('user_id, name, role, branch_id, sales_user_id')
-      .eq('user_id', user.id)
-      .eq('is_active', true)
-      .maybeSingle()
+    return user.id
+  }
 
-    if (error) {
-      console.error('user role fetch error:', error)
-      setMessage(`権限情報の取得に失敗しました：${error.message}`)
-      setAuthLoading(false)
-      return
-    }
+  function getAuditUserName(userId: string | null | undefined) {
+    if (!userId) return '-'
 
-    if (!data) {
-      setMessage('このユーザーの権限情報が登録されていません。')
-      setAuthLoading(false)
-      return
-    }
+    const user = auditUsers.find((item) => item.user_id === userId)
+    return user?.name || user?.email || userId.slice(0, 8)
+  }
 
-    const roleData = data as CurrentUserRole
-    setCurrentUserRole(roleData)
+  function formatDateTime(value: string | null | undefined) {
+    if (!value) return '-'
 
-    if (roleData.role !== 'admin' && roleData.branch_id) {
-      setSelectedBranchId(roleData.branch_id)
-    }
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return value
 
-    if (roleData.role === 'user' && roleData.sales_user_id) {
-      setSelectedSalesUserId(roleData.sales_user_id)
-      setEntryForm((prev) => ({
-        ...prev,
-        sales_user_id: roleData.sales_user_id ?? '',
-      }))
-      setExitForm((prev) => ({
-        ...prev,
-        sales_user_id: roleData.sales_user_id ?? '',
-      }))
-      setDailyResultForm((prev) => ({
-        ...prev,
-        sales_user_id: roleData.sales_user_id ?? '',
-      }))
-    }
+    const yyyy = date.getFullYear()
+    const mm = String(date.getMonth() + 1).padStart(2, '0')
+    const dd = String(date.getDate()).padStart(2, '0')
+    const hh = String(date.getHours()).padStart(2, '0')
+    const mi = String(date.getMinutes()).padStart(2, '0')
 
-    setAuthLoading(false)
+    return yyyy + '-' + mm + '-' + dd + ' ' + hh + ':' + mi
   }
 
   async function fetchBranches() {
-    let query = supabase
+    const { data, error } = await supabase
       .from('branches')
       .select('id, branch_name')
       .eq('is_active', true)
       .order('display_order', { ascending: true })
-
-    if (currentUserRole && currentUserRole.role !== 'admin' && currentUserRole.branch_id) {
-      query = query.eq('id', currentUserRole.branch_id)
-    }
-
-    const { data, error } = await query
 
     if (error) {
       console.error(error)
@@ -351,27 +326,17 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
     setBranches(data ?? [])
 
     if (data && data.length > 0) {
-      if (currentUserRole?.role !== 'admin' && currentUserRole?.branch_id) {
-        setSelectedBranchId(currentUserRole.branch_id)
-      } else {
-        setSelectedBranchId(data[0].id)
-      }
+      setSelectedBranchId(data[0].id)
     }
   }
 
   async function fetchSalesUsers(branchId: string) {
-    let query = supabase
+    const { data, error } = await supabase
       .from('sales_users')
       .select('id, name, branch_id, role')
       .eq('branch_id', branchId)
       .eq('is_active', true)
       .order('display_order', { ascending: true })
-
-    if (currentUserRole?.role === 'user' && currentUserRole.sales_user_id) {
-      query = query.eq('id', currentUserRole.sales_user_id)
-    }
-
-    const { data, error } = await query
 
     if (error) {
       console.error(error)
@@ -380,13 +345,6 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
     }
 
     setSalesUsers(data ?? [])
-
-    if (currentUserRole?.role === 'user' && currentUserRole.sales_user_id) {
-      setSelectedSalesUserId(currentUserRole.sales_user_id)
-      setEntryForm((prev) => ({ ...prev, sales_user_id: currentUserRole.sales_user_id ?? '' }))
-      setExitForm((prev) => ({ ...prev, sales_user_id: currentUserRole.sales_user_id ?? '' }))
-      setDailyResultForm((prev) => ({ ...prev, sales_user_id: currentUserRole.sales_user_id ?? '' }))
-    }
   }
 
   async function fetchCompanies(branchId: string) {
@@ -404,6 +362,21 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
     }
 
     setCompanies(data ?? [])
+  }
+
+  async function fetchAuditUsers() {
+    const { data, error } = await supabase
+      .from('user_roles')
+      .select('user_id, name, email')
+      .eq('is_active', true)
+      .order('name', { ascending: true })
+
+    if (error) {
+      console.error('audit users fetch error:', error)
+      return
+    }
+
+    setAuditUsers((data ?? []) as AuditUserRole[])
   }
 
   async function fetchMonthlyPlan() {
@@ -543,6 +516,12 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
         certainty_rank,
         status,
         memo,
+        created_by,
+        updated_by,
+        canceled_by,
+        created_at,
+        updated_at,
+        canceled_at,
         companies (
           company_name
         ),
@@ -570,6 +549,12 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
         next_job,
         status,
         memo,
+        created_by,
+        updated_by,
+        canceled_by,
+        created_at,
+        updated_at,
+        canceled_at,
         companies (
           company_name
         ),
@@ -631,6 +616,12 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
         visit_count,
         interview_count,
         memo,
+        created_by,
+        updated_by,
+        canceled_by,
+        created_at,
+        updated_at,
+        canceled_at,
         sales_users (
           name
         )
@@ -669,6 +660,12 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
     setLoading(true)
     setMessage('')
 
+    const authUserId = await getCurrentAuthUserId()
+    if (!authUserId) {
+      setLoading(false)
+      return
+    }
+
     const { error } = await supabase
       .from('daily_results')
       .insert({
@@ -681,6 +678,8 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
         transaction_count: Number(dailyResultForm.transaction_count || 0),
         status: '有効',
         memo: dailyResultForm.memo || null,
+        created_by: authUserId,
+        updated_by: authUserId,
       })
 
     if (error) {
@@ -747,6 +746,12 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
     setLoading(true)
     setMessage('')
 
+    const authUserId = await getCurrentAuthUserId()
+    if (!authUserId) {
+      setLoading(false)
+      return
+    }
+
     const { error } = await supabase
       .from('daily_results')
       .update({
@@ -759,6 +764,7 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
         transaction_count: Number(dailyResultForm.transaction_count || 0),
         status: '有効',
         memo: dailyResultForm.memo || null,
+        updated_by: authUserId,
       })
       .eq('id', editingDailyResultId)
 
@@ -782,9 +788,20 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
     setLoading(true)
     setMessage('')
 
+    const authUserId = await getCurrentAuthUserId()
+    if (!authUserId) {
+      setLoading(false)
+      return
+    }
+
     const { error } = await supabase
       .from('daily_results')
-      .update({ status: '取消' })
+      .update({
+        status: '取消',
+        canceled_by: authUserId,
+        canceled_at: new Date().toISOString(),
+        updated_by: authUserId,
+      })
       .eq('id', id)
 
     if (error) {
@@ -822,6 +839,12 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
     setLoading(true)
     setMessage('')
 
+    const authUserId = await getCurrentAuthUserId()
+    if (!authUserId) {
+      setLoading(false)
+      return
+    }
+
     const { error } = await supabase
       .from('entry_plans')
       .insert({
@@ -835,6 +858,8 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
         certainty_rank: entryForm.certainty_rank,
         status: entryForm.status,
         memo: entryForm.memo || null,
+        created_by: authUserId,
+        updated_by: authUserId,
       })
 
     if (error) {
@@ -909,6 +934,12 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
     setLoading(true)
     setMessage('')
 
+    const authUserId = await getCurrentAuthUserId()
+    if (!authUserId) {
+      setLoading(false)
+      return
+    }
+
     const { error } = await supabase
       .from('entry_plans')
       .update({
@@ -921,6 +952,7 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
         certainty_rank: entryForm.certainty_rank,
         status: entryForm.status,
         memo: entryForm.memo || null,
+        updated_by: authUserId,
       })
       .eq('id', editingEntryId)
 
@@ -956,6 +988,12 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
     setLoading(true)
     setMessage('')
 
+    const authUserId = await getCurrentAuthUserId()
+    if (!authUserId) {
+      setLoading(false)
+      return
+    }
+
     const { error } = await supabase.from('exit_plans').insert({
       branch_id: selectedBranchId,
       sales_user_id: exitForm.sales_user_id,
@@ -967,6 +1005,8 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
       next_job: exitForm.next_job || null,
       status: exitForm.status,
       memo: exitForm.memo || null,
+      created_by: authUserId,
+      updated_by: authUserId,
     })
 
     if (error) {
@@ -1038,6 +1078,12 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
     setLoading(true)
     setMessage('')
 
+    const authUserId = await getCurrentAuthUserId()
+    if (!authUserId) {
+      setLoading(false)
+      return
+    }
+
     const { error } = await supabase
       .from('exit_plans')
       .update({
@@ -1050,6 +1096,7 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
         next_job: exitForm.next_job || null,
         status: exitForm.status,
         memo: exitForm.memo || null,
+        updated_by: authUserId,
       })
       .eq('id', editingExitId)
 
@@ -1073,9 +1120,20 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
     setLoading(true)
     setMessage('')
 
+    const authUserId = await getCurrentAuthUserId()
+    if (!authUserId) {
+      setLoading(false)
+      return
+    }
+
     const { error } = await supabase
       .from('entry_plans')
-      .update({ status: '取消' })
+      .update({
+        status: '取消',
+        canceled_by: authUserId,
+        canceled_at: new Date().toISOString(),
+        updated_by: authUserId,
+      })
       .eq('id', id)
 
     if (error) {
@@ -1097,9 +1155,20 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
     setLoading(true)
     setMessage('')
 
+    const authUserId = await getCurrentAuthUserId()
+    if (!authUserId) {
+      setLoading(false)
+      return
+    }
+
     const { error } = await supabase
       .from('exit_plans')
-      .update({ status: '取消' })
+      .update({
+        status: '取消',
+        canceled_by: authUserId,
+        canceled_at: new Date().toISOString(),
+        updated_by: authUserId,
+      })
       .eq('id', id)
 
     if (error) {
@@ -1535,9 +1604,15 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
       人選状況: plan.selection_status ?? '',
       状態: plan.status ?? '',
       備考: plan.memo ?? '',
+      登録者: getAuditUserName(plan.created_by),
+      登録日時: formatDateTime(plan.created_at),
+      更新者: getAuditUserName(plan.updated_by),
+      更新日時: formatDateTime(plan.updated_at),
+      取消者: getAuditUserName(plan.canceled_by),
+      取消日時: formatDateTime(plan.canceled_at),
     }))
 
-    addJsonSheet(workbook, '入職・見込み一覧', rows, [12, 18, 22, 14, 12, 12, 14, 12, 30])
+    addJsonSheet(workbook, '入職・見込み一覧', rows, [12, 18, 22, 14, 12, 12, 14, 12, 30, 14, 18, 14, 18, 14, 18])
   }
 
   function createExitListSheet(workbook: XLSX.WorkBook) {
@@ -1551,9 +1626,15 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
       理由: plan.exit_reason ?? '',
       次職: plan.next_job ?? '',
       備考: plan.memo ?? '',
+      登録者: getAuditUserName(plan.created_by),
+      登録日時: formatDateTime(plan.created_at),
+      更新者: getAuditUserName(plan.updated_by),
+      更新日時: formatDateTime(plan.updated_at),
+      取消者: getAuditUserName(plan.canceled_by),
+      取消日時: formatDateTime(plan.canceled_at),
     }))
 
-    addJsonSheet(workbook, '退職予定・退職確定一覧', rows, [12, 18, 22, 14, 12, 10, 14, 18, 30])
+    addJsonSheet(workbook, '退職予定・退職確定一覧', rows, [12, 18, 22, 14, 12, 10, 14, 18, 30, 14, 18, 14, 18, 14, 18])
   }
 
   function createDailyResultsSheet(workbook: XLSX.WorkBook) {
@@ -1566,9 +1647,15 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
       取引件数: Number(result.transaction_count ?? 0),
       状態: result.status ?? '有効',
       備考: result.memo ?? '',
+      登録者: getAuditUserName(result.created_by),
+      登録日時: formatDateTime(result.created_at),
+      更新者: getAuditUserName(result.updated_by),
+      更新日時: formatDateTime(result.updated_at),
+      取消者: getAuditUserName(result.canceled_by),
+      取消日時: formatDateTime(result.canceled_at),
     }))
 
-    addJsonSheet(workbook, '日次実績一覧', rows, [12, 14, 8, 8, 8, 10, 10, 30])
+    addJsonSheet(workbook, '日次実績一覧', rows, [12, 14, 8, 8, 8, 10, 10, 30, 14, 18, 14, 18, 14, 18])
   }
 
 
@@ -1629,16 +1716,6 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
   const filteredCompaniesForEntry = companies
   const filteredCompaniesForExit = companies
 
-  if (authLoading) {
-    return (
-      <div className="p-4 md:p-8">
-        <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm">
-          権限情報を確認しています...
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
@@ -1657,18 +1734,6 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
           </div>
         )}
 
-        {currentUserRole && (
-          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
-            ログイン中：
-            <span className="ml-1 font-semibold text-slate-900">
-              {currentUserRole.name ?? '名称未設定'}
-            </span>
-            <span className="ml-3 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
-              {currentUserRole.role}
-            </span>
-          </div>
-        )}
-
         <section className="rounded-xl bg-white p-4 shadow-sm">
           <h2 className="mb-4 text-lg font-semibold text-gray-900">
             表示条件・月次PLAN
@@ -1682,8 +1747,7 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
               <select
                 value={selectedBranchId}
                 onChange={(e) => setSelectedBranchId(e.target.value)}
-                disabled={currentUserRole?.role !== 'admin'}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100 disabled:text-gray-500"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
               >
                 {branches.map((branch) => (
                   <option key={branch.id} value={branch.id}>
@@ -1712,10 +1776,9 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
               <select
                 value={selectedSalesUserId}
                 onChange={(e) => setSelectedSalesUserId(e.target.value)}
-                disabled={currentUserRole?.role === 'user'}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100 disabled:text-gray-500"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
               >
-                {currentUserRole?.role !== 'user' && <option value="">全員</option>}
+                <option value="">全員</option>
                 {salesUsers.map((user) => (
                   <option key={user.id} value={user.id}>
                     {user.name}
@@ -1956,8 +2019,7 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
                 label: user.name,
               }))}
               placeholder="選択してください"
-            
-                disabled={currentUserRole?.role === 'user'}/>
+            />
 
             <Input
               label="新規数"
@@ -2144,7 +2206,7 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[980px] table-fixed border-collapse text-sm tabular-nums">
+              <table className="w-full min-w-[1350px] table-fixed border-collapse text-sm tabular-nums">
                 <colgroup>
                   <col className="w-[110px]" />
                   <col className="w-[130px]" />
@@ -2154,6 +2216,9 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
                   <col className="w-[90px]" />
                   <col className="w-[90px]" />
                   <col className="w-[220px]" />
+                  <col className="w-[140px]" />
+                  <col className="w-[140px]" />
+                  <col className="w-[140px]" />
                   <col className="w-[130px]" />
                 </colgroup>
                 <thead>
@@ -2166,13 +2231,16 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
                     <th className="px-3 py-2 text-right">取引件数</th>
                     <th className="px-3 py-2">状態</th>
                     <th className="px-3 py-2">備考</th>
+                    <th className="px-3 py-2">登録者</th>
+                    <th className="px-3 py-2">更新者</th>
+                    <th className="px-3 py-2">取消者</th>
                     <th className="px-3 py-2">操作</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sortedDailyResults.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="px-3 py-6 text-center text-gray-500">
+                      <td colSpan={12} className="px-3 py-6 text-center text-gray-500">
                         日次実績はありません。
                       </td>
                     </tr>
@@ -2198,6 +2266,18 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
                             <StatusBadge value={result.status ?? '有効'} />
                           </td>
                           <td className="px-3 py-2">{result.memo ?? '-'}</td>
+                          <td className="px-3 py-2 text-xs text-gray-600">
+                            <div>{getAuditUserName(result.created_by)}</div>
+                            <div className="text-gray-400">{formatDateTime(result.created_at)}</div>
+                          </td>
+                          <td className="px-3 py-2 text-xs text-gray-600">
+                            <div>{getAuditUserName(result.updated_by)}</div>
+                            <div className="text-gray-400">{formatDateTime(result.updated_at)}</div>
+                          </td>
+                          <td className="px-3 py-2 text-xs text-gray-600">
+                            <div>{getAuditUserName(result.canceled_by)}</div>
+                            <div className="text-gray-400">{formatDateTime(result.canceled_at)}</div>
+                          </td>
                           <td className="px-3 py-2">
                             {result.status !== '取消' ? (
                               <div className="flex gap-2">
@@ -2257,8 +2337,7 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
                   label: user.name,
                 }))}
                 placeholder="選択してください"
-              
-                disabled={currentUserRole?.role === 'user'}/>
+              />
 
               <Select
                 label="企業名"
@@ -2361,13 +2440,16 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
                     <th className="px-3 py-2">入職日</th>
                     <th className="px-3 py-2">状態</th>
                     <th className="px-3 py-2">備考</th>
+                    <th className="px-3 py-2">登録者</th>
+                    <th className="px-3 py-2">更新者</th>
+                    <th className="px-3 py-2">取消者</th>
                     <th className="px-3 py-2">操作</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sortedEntryPlans.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="px-3 py-6 text-center text-gray-500">
+                      <td colSpan={12} className="px-3 py-6 text-center text-gray-500">
                         入職予定はありません。
                       </td>
                     </tr>
@@ -2401,6 +2483,18 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
                             <StatusBadge value={plan.status} />
                           </td>
                           <td className="px-3 py-2">{plan.memo ?? '-'}</td>
+                          <td className="px-3 py-2 text-xs text-gray-600">
+                            <div>{getAuditUserName(plan.created_by)}</div>
+                            <div className="text-gray-400">{formatDateTime(plan.created_at)}</div>
+                          </td>
+                          <td className="px-3 py-2 text-xs text-gray-600">
+                            <div>{getAuditUserName(plan.updated_by)}</div>
+                            <div className="text-gray-400">{formatDateTime(plan.updated_at)}</div>
+                          </td>
+                          <td className="px-3 py-2 text-xs text-gray-600">
+                            <div>{getAuditUserName(plan.canceled_by)}</div>
+                            <div className="text-gray-400">{formatDateTime(plan.canceled_at)}</div>
+                          </td>
                           <td className="px-3 py-2">
                             {plan.status !== '取消' ? (
                               <div className="flex gap-2">
@@ -2458,8 +2552,7 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
                   label: user.name,
                 }))}
                 placeholder="選択してください"
-              
-                disabled={currentUserRole?.role === 'user'}/>
+              />
 
               <Select
                 label="退職企業"
@@ -2561,13 +2654,16 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
                     <th className="px-3 py-2">再稼働</th>
                     <th className="px-3 py-2">理由</th>
                     <th className="px-3 py-2">備考</th>
+                    <th className="px-3 py-2">登録者</th>
+                    <th className="px-3 py-2">更新者</th>
+                    <th className="px-3 py-2">取消者</th>
                     <th className="px-3 py-2">操作</th>
                   </tr>
                 </thead>
                 <tbody>
                   {exitPlans.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="px-3 py-6 text-center text-gray-500">
+                      <td colSpan={12} className="px-3 py-6 text-center text-gray-500">
                         退職予定はありません。
                       </td>
                     </tr>
@@ -2593,6 +2689,18 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
                           <td className="px-3 py-2">{plan.reemployment_status ?? '-'}</td>
                           <td className="px-3 py-2">{plan.exit_reason ?? '-'}</td>
                           <td className="px-3 py-2">{plan.memo ?? '-'}</td>
+                          <td className="px-3 py-2 text-xs text-gray-600">
+                            <div>{getAuditUserName(plan.created_by)}</div>
+                            <div className="text-gray-400">{formatDateTime(plan.created_at)}</div>
+                          </td>
+                          <td className="px-3 py-2 text-xs text-gray-600">
+                            <div>{getAuditUserName(plan.updated_by)}</div>
+                            <div className="text-gray-400">{formatDateTime(plan.updated_at)}</div>
+                          </td>
+                          <td className="px-3 py-2 text-xs text-gray-600">
+                            <div>{getAuditUserName(plan.canceled_by)}</div>
+                            <div className="text-gray-400">{formatDateTime(plan.canceled_at)}</div>
+                          </td>
                           <td className="px-3 py-2">
                             {plan.status !== '取消' ? (
                               <div className="flex gap-2">
@@ -2735,14 +2843,12 @@ function Select({
   onChange,
   options,
   placeholder,
-  disabled = false,
 }: {
   label: string
   value: string
   onChange: (value: string) => void
   options: { value: string; label: string }[]
   placeholder?: string
-  disabled?: boolean
 }) {
   return (
     <div>
@@ -2752,8 +2858,7 @@ function Select({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100 disabled:text-gray-500"
+        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
       >
         {placeholder && <option value="">{placeholder}</option>}
         {options.map((option) => (
