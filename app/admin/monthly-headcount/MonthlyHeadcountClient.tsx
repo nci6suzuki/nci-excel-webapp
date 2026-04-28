@@ -2484,8 +2484,8 @@ function getSalesUserName(plan: EntryPlan | ExitPlan | DailyResult) {
                             <CertaintyBadge value={plan.certainty_rank} />
                           </td>
                           <td className="px-3 py-2 font-medium">{plan.worker_name}</td>
-                          <td className="px-3 py-2">{plan.companies?.company_name ?? '-'}</td>
-                          <td className="px-3 py-2">{plan.sales_users?.name ?? '-'}</td>
+                          <td className="px-3 py-2">{getCompanyName(plan) || '-'}</td>
+                          <td className="px-3 py-2">{getSalesUserName(plan) || '-'}</td>
                           <td className="px-3 py-2">{plan.tour_date ?? '-'}</td>
                           <td className="px-3 py-2">
                             {plan.entry_date ? (
@@ -2698,8 +2698,8 @@ function getSalesUserName(plan: EntryPlan | ExitPlan | DailyResult) {
                             <StatusBadge value={plan.status} />
                           </td>
                           <td className="px-3 py-2 font-medium">{plan.worker_name}</td>
-                          <td className="px-3 py-2">{plan.companies?.company_name ?? '-'}</td>
-                          <td className="px-3 py-2">{plan.sales_users?.name ?? '-'}</td>
+                          <td className="px-3 py-2">{getCompanyName(plan) || '-'}</td>
+                          <td className="px-3 py-2">{getSalesUserName(plan) || '-'}</td>
                           <td className="px-3 py-2">{plan.exit_date ?? '-'}</td>
                           <td className="px-3 py-2">{plan.reemployment_status ?? '-'}</td>
                           <td className="px-3 py-2">{plan.exit_reason ?? '-'}</td>
