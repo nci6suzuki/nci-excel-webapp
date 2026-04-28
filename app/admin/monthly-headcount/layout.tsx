@@ -19,6 +19,11 @@ const navItems = [
     description: '登録済みデータの確認・修正',
     href: '/admin/monthly-headcount/list',
   },
+  {
+    label: '支店別',
+    description: '全支店の着地見込みを確認',
+    href: '/admin/monthly-headcount/dashboard',
+  },
 ]
 
 export default function MonthlyHeadcountLayout({
@@ -31,7 +36,6 @@ export default function MonthlyHeadcountLayout({
   return (
     <div className="min-h-screen bg-slate-100">
       <div className="flex min-h-screen">
-        {/* PCサイドバー */}
         <aside className="hidden w-72 shrink-0 border-r border-slate-200 bg-white/90 px-4 py-5 shadow-sm lg:block">
           <div className="mb-6 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 p-5 text-white shadow-md">
             <p className="text-xs font-semibold opacity-80">
@@ -81,7 +85,6 @@ export default function MonthlyHeadcountLayout({
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          {/* スマホ・タブレット用ヘッダー */}
           <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur lg:hidden">
             <div className="mb-3">
               <p className="text-xs font-semibold text-blue-600">
@@ -92,7 +95,7 @@ export default function MonthlyHeadcountLayout({
               </h1>
             </div>
 
-            <nav className="grid grid-cols-3 gap-2">
+            <nav className="grid grid-cols-4 gap-2">
               {navItems.map((item) => {
                 const isActive =
                   item.href === '/admin/monthly-headcount'
@@ -117,7 +120,6 @@ export default function MonthlyHeadcountLayout({
             </nav>
           </header>
 
-          {/* PC上部バー */}
           <header className="hidden border-b border-slate-200 bg-white/80 px-8 py-4 backdrop-blur lg:block">
             <div className="flex items-center justify-between">
               <div>
@@ -130,7 +132,7 @@ export default function MonthlyHeadcountLayout({
               </div>
 
               <div className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-600">
-                入力・集計・一覧をページ分割
+                入力・集計・一覧・支店別ダッシュボード
               </div>
             </div>
           </header>

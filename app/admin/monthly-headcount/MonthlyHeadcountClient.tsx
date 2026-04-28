@@ -81,6 +81,7 @@ type DailyResult = {
   increase_count: number | null
   exit_count: number | null
   transaction_count: number | null
+  status: string | null
   new_orders_count: number | null
   visit_count: number | null
   interview_count: number | null
@@ -169,6 +170,7 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
 
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null)
   const [editingExitId, setEditingExitId] = useState<string | null>(null)
+  const [editingDailyResultId, setEditingDailyResultId] = useState<string | null>(null)
 
   const [entryForm, setEntryForm] = useState({
     worker_name: '',
@@ -514,6 +516,7 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
         increase_count,
         exit_count,
         transaction_count,
+        status,
         new_orders_count,
         visit_count,
         interview_count,
@@ -566,6 +569,7 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
         increase_count: Number(dailyResultForm.increase_count || 0),
         exit_count: Number(dailyResultForm.exit_count || 0),
         transaction_count: Number(dailyResultForm.transaction_count || 0),
+        status: '有効',
         memo: dailyResultForm.memo || null,
       })
 
@@ -576,8 +580,19 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
       return
     }
 
+    resetDailyResultForm(dailyResultForm.result_date)
+
+    setMessage('日次実績を登録しました。')
+    await fetchDailyResults()
+    setLoading(false)
+  }
+
+
+  function resetDailyResultForm(resultDate?: string) {
+    setEditingDailyResultId(null)
+
     setDailyResultForm({
-      result_date: dailyResultForm.result_date,
+      result_date: resultDate || dailyResultForm.result_date || `${getCurrentMonth()}-01`,
       sales_user_id: selectedSalesUserId || '',
       new_count: '0',
       increase_count: '0',
@@ -585,8 +600,91 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
       transaction_count: '0',
       memo: '',
     })
+  }
 
-    setMessage('日次実績を登録しました。')
+  function handleStartEditDailyResult(result: DailyResult) {
+    setEditingDailyResultId(result.id)
+
+    setDailyResultForm({
+      result_date: result.result_date ?? `${getCurrentMonth()}-01`,
+      sales_user_id: result.sales_user_id ?? '',
+      new_count: String(result.new_count ?? 0),
+      increase_count: String(result.increase_count ?? 0),
+      exit_count: String(result.exit_count ?? 0),
+      transaction_count: String(result.transaction_count ?? 0),
+      memo: result.memo ?? '',
+    })
+
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth',
+    })
+  }
+
+  async function handleUpdateDailyResult() {
+    if (!editingDailyResultId) return
+
+    if (!selectedBranchId) {
+      setMessage('支店を選択してください。')
+      return
+    }
+
+    if (!dailyResultForm.sales_user_id || !dailyResultForm.result_date) {
+      setMessage('日次実績は、担当者と日付が必須です。')
+      return
+    }
+
+    setLoading(true)
+    setMessage('')
+
+    const { error } = await supabase
+      .from('daily_results')
+      .update({
+        branch_id: selectedBranchId,
+        sales_user_id: dailyResultForm.sales_user_id,
+        result_date: dailyResultForm.result_date,
+        new_count: Number(dailyResultForm.new_count || 0),
+        increase_count: Number(dailyResultForm.increase_count || 0),
+        exit_count: Number(dailyResultForm.exit_count || 0),
+        transaction_count: Number(dailyResultForm.transaction_count || 0),
+        status: '有効',
+        memo: dailyResultForm.memo || null,
+      })
+      .eq('id', editingDailyResultId)
+
+    if (error) {
+      console.error('daily result update error:', error)
+      setMessage(`日次実績の更新に失敗しました：${error.message}`)
+      setLoading(false)
+      return
+    }
+
+    resetDailyResultForm(dailyResultForm.result_date)
+    setMessage('日次実績を更新しました。')
+    await fetchDailyResults()
+    setLoading(false)
+  }
+
+  async function handleCancelDailyResult(id: string) {
+    const ok = window.confirm('この日次実績を取消にしますか？')
+    if (!ok) return
+
+    setLoading(true)
+    setMessage('')
+
+    const { error } = await supabase
+      .from('daily_results')
+      .update({ status: '取消' })
+      .eq('id', id)
+
+    if (error) {
+      console.error('daily result cancel error:', error)
+      setMessage(`日次実績の取消に失敗しました：${error.message}`)
+      setLoading(false)
+      return
+    }
+
+    setMessage('日次実績を取消にしました。')
     await fetchDailyResults()
     setLoading(false)
   }
@@ -1015,6 +1113,29 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
     })
   }, [exitPlans])
 
+
+  const activeDailyResults = useMemo(() => {
+    const normalizeText = (value: string | null | undefined) => {
+      return String(value ?? '').normalize('NFKC').trim()
+    }
+
+    return dailyResults.filter((item) => normalizeText(item.status) !== '取消')
+  }, [dailyResults])
+
+  const sortedDailyResults = useMemo(() => {
+    return [...dailyResults].sort((a, b) => {
+      const aDate = a.result_date || ''
+      const bDate = b.result_date || ''
+
+      if (aDate !== bDate) return aDate.localeCompare(bDate)
+
+      const aName = a.sales_users?.name ?? ''
+      const bName = b.sales_users?.name ?? ''
+
+      return aName.localeCompare(bName)
+    })
+  }, [dailyResults])
+
   const salesUserSummaries = useMemo(() => {
     const normalizeText = (value: string | null | undefined) => {
       return String(value ?? '').normalize('NFKC').trim()
@@ -1057,7 +1178,7 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
       const bCount = entryProspects.filter((item) => normalizeText(item.certainty_rank).includes('B')).length
       const cCount = entryProspects.filter((item) => normalizeText(item.certainty_rank).includes('C')).length
 
-      const userDailyResults = dailyResults.filter((item) => item.sales_user_id === user.id)
+      const userDailyResults = activeDailyResults.filter((item) => item.sales_user_id === user.id)
 
       const newCount = userDailyResults.reduce((sum, item) => sum + Number(item.new_count ?? 0), 0)
       const increaseCount = userDailyResults.reduce((sum, item) => sum + Number(item.increase_count ?? 0), 0)
@@ -1096,7 +1217,7 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
         actualNetIncrease,
       }
     })
-  }, [salesUsers, selectedSalesUserId, monthlyPlansForUsers, entryPlans, exitPlans, dailyResults])
+  }, [salesUsers, selectedSalesUserId, monthlyPlansForUsers, entryPlans, exitPlans, activeDailyResults])
 
   const workforceChangeRows = useMemo(() => {
     const normalizeText = (value: string | null | undefined) => {
@@ -1165,7 +1286,7 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
       const confirmedNet = entryConfirmed - exitConfirmed
       currentConfirmedHeadcount += confirmedNet
 
-      const dailyItems = dailyResults.filter((item) => item.result_date === date)
+      const dailyItems = activeDailyResults.filter((item) => item.result_date === date)
       const newCount = dailyItems.reduce((sum, item) => sum + Number(item.new_count ?? 0), 0)
       const increaseCount = dailyItems.reduce((sum, item) => sum + Number(item.increase_count ?? 0), 0)
       const actualExitCount = dailyItems.reduce((sum, item) => sum + Number(item.exit_count ?? 0), 0)
@@ -1193,7 +1314,7 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
     }
 
     return rows
-  }, [targetMonth, startHeadcount, headcountPlan, entryPlans, exitPlans, dailyResults])
+  }, [targetMonth, startHeadcount, headcountPlan, entryPlans, exitPlans, activeDailyResults])
 
   const workforceChangeSummary = useMemo(() => {
     const lastRow = workforceChangeRows[workforceChangeRows.length - 1]
@@ -1326,17 +1447,18 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
   }
 
   function createDailyResultsSheet(workbook: XLSX.WorkBook) {
-    const rows = dailyResults.map((result) => ({
+    const rows = sortedDailyResults.map((result) => ({
       日付: result.result_date,
       担当: result.sales_users?.name ?? '',
       新規: Number(result.new_count ?? 0),
       増員: Number(result.increase_count ?? 0),
       退社: Number(result.exit_count ?? 0),
       取引件数: Number(result.transaction_count ?? 0),
+      状態: result.status ?? '有効',
       備考: result.memo ?? '',
     }))
 
-    addJsonSheet(workbook, '日次実績一覧', rows, [12, 14, 8, 8, 8, 10, 30])
+    addJsonSheet(workbook, '日次実績一覧', rows, [12, 14, 8, 8, 8, 10, 10, 30])
   }
 
 
@@ -1672,11 +1794,11 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
           </section>
         )}
 
-        {mode === 'input' && (
+        {(mode === 'input' || editingDailyResultId) && (
         <section className="rounded-xl bg-white p-4 shadow-sm">
           <div className="mb-4">
             <h2 className="text-lg font-semibold text-gray-900">
-              日次実績入力
+              {editingDailyResultId ? '日次実績編集' : '日次実績入力'}
             </h2>
             <p className="text-sm text-gray-500">
               新規数・増員数・退社数・取引件数を担当者ごとに登録します。登録した数値は、下の個人別実績管理表に自動反映されます。
@@ -1732,11 +1854,11 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
 
             <div className="flex items-end">
               <button
-                onClick={handleCreateDailyResult}
+                onClick={editingDailyResultId ? handleUpdateDailyResult : handleCreateDailyResult}
                 disabled={loading}
                 className="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
               >
-                実績登録
+                {editingDailyResultId ? '実績更新' : '実績登録'}
               </button>
             </div>
           </div>
@@ -1748,6 +1870,18 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
               onChange={(value) => setDailyResultForm({ ...dailyResultForm, memo: value })}
             />
           </div>
+
+          {editingDailyResultId && (
+            <div className="mt-4">
+              <button
+                onClick={() => resetDailyResultForm()}
+                disabled={loading}
+                className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 disabled:opacity-50 md:w-auto"
+              >
+                編集をキャンセル
+              </button>
+            </div>
+          )}
         </section>
 
         )}
@@ -1860,6 +1994,106 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
           </div>
         </section>
 
+        )}
+
+
+        {mode === 'list' && (
+          <section className="rounded-xl bg-white p-4 shadow-sm">
+            <div className="mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">
+                日次実績一覧
+              </h2>
+              <p className="text-sm text-gray-500">
+                登録済みの日次実績を確認・編集・取消できます。取消済みは個人別実績管理表と稼働人員変動表の集計から除外されます。
+              </p>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[980px] table-fixed border-collapse text-sm tabular-nums">
+                <colgroup>
+                  <col className="w-[110px]" />
+                  <col className="w-[130px]" />
+                  <col className="w-[80px]" />
+                  <col className="w-[80px]" />
+                  <col className="w-[80px]" />
+                  <col className="w-[90px]" />
+                  <col className="w-[90px]" />
+                  <col className="w-[220px]" />
+                  <col className="w-[130px]" />
+                </colgroup>
+                <thead>
+                  <tr className="border-b bg-gray-100 text-left">
+                    <th className="px-3 py-2">日付</th>
+                    <th className="px-3 py-2">担当</th>
+                    <th className="px-3 py-2 text-right">新規</th>
+                    <th className="px-3 py-2 text-right">増員</th>
+                    <th className="px-3 py-2 text-right">退社</th>
+                    <th className="px-3 py-2 text-right">取引件数</th>
+                    <th className="px-3 py-2">状態</th>
+                    <th className="px-3 py-2">備考</th>
+                    <th className="px-3 py-2">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedDailyResults.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="px-3 py-6 text-center text-gray-500">
+                        日次実績はありません。
+                      </td>
+                    </tr>
+                  ) : (
+                    sortedDailyResults.map((result) => {
+                      const isCanceled = result.status === '取消'
+
+                      return (
+                        <tr
+                          key={result.id}
+                          className={[
+                            'border-b hover:bg-slate-50',
+                            isCanceled ? 'bg-gray-50 text-gray-400' : '',
+                          ].join(' ')}
+                        >
+                          <td className="px-3 py-2">{result.result_date}</td>
+                          <td className="px-3 py-2 font-semibold text-gray-900">{result.sales_users?.name ?? '-'}</td>
+                          <td className="px-3 py-2 text-right text-blue-700">{Number(result.new_count ?? 0)}</td>
+                          <td className="px-3 py-2 text-right text-green-700">{Number(result.increase_count ?? 0)}</td>
+                          <td className="px-3 py-2 text-right text-red-700">{Number(result.exit_count ?? 0)}</td>
+                          <td className="px-3 py-2 text-right">{Number(result.transaction_count ?? 0)}</td>
+                          <td className="px-3 py-2">
+                            <StatusBadge value={result.status ?? '有効'} />
+                          </td>
+                          <td className="px-3 py-2">{result.memo ?? '-'}</td>
+                          <td className="px-3 py-2">
+                            {result.status !== '取消' ? (
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => handleStartEditDailyResult(result)}
+                                  disabled={loading}
+                                  className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+                                >
+                                  編集
+                                </button>
+
+                                <button
+                                  onClick={() => handleCancelDailyResult(result.id)}
+                                  disabled={loading}
+                                  className="rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                                >
+                                  取消
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-gray-400">取消済</span>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
         )}
 
         {(mode === 'input' || mode === 'list') && (
@@ -2291,7 +2525,9 @@ function StatusBadge({ value }: { value: string | null }) {
       ? 'bg-blue-100 text-blue-700 border-blue-200'
       : text === '取消'
         ? 'bg-gray-100 text-gray-500 border-gray-200'
-        : 'bg-slate-100 text-slate-700 border-slate-200'
+        : text === '有効'
+          ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
+          : 'bg-slate-100 text-slate-700 border-slate-200'
 
   return (
     <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${className}`}>
