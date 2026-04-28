@@ -32,6 +32,8 @@ type MonthlyPlan = {
   start_headcount: number | null
 }
 
+type RelationOne<T> = T | T[] | null
+
 type EntryPlan = {
   id: string
   worker_name: string | null
@@ -50,12 +52,12 @@ type EntryPlan = {
   created_at: string | null
   updated_at: string | null
   canceled_at: string | null
-  companies?: {
-    company_name: string
-  } | null
-  sales_users?: {
-    name: string
-  } | null
+  companies?: RelationOne<{
+    company_name: string | null
+  }>
+  sales_users?: RelationOne<{
+    name: string | null
+  }>
 }
 
 type ExitPlan = {
@@ -76,12 +78,12 @@ type ExitPlan = {
   created_at: string | null
   updated_at: string | null
   canceled_at: string | null
-  companies?: {
-    company_name: string
-  } | null
-  sales_users?: {
-    name: string
-  } | null
+  companies?: RelationOne<{
+    company_name: string | null
+  }>
+  sales_users?: RelationOne<{
+    name: string | null
+  }>
 }
 
 type DailyResult = {
@@ -104,9 +106,9 @@ type DailyResult = {
   created_at: string | null
   updated_at: string | null
   canceled_at: string | null
-  sales_users?: {
-    name: string
-  } | null
+  sales_users?: RelationOne<{
+    name: string | null
+  }>
 }
 
 const certaintyOptions = ['確定', 'A見込み', 'B見込み', 'C見込み']
@@ -309,6 +311,19 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
 
     return yyyy + '-' + mm + '-' + dd + ' ' + hh + ':' + mi
   }
+
+  function getRelationOne<T>(value: RelationOne<T> | undefined): T | null {
+  if (!value) return null
+  return Array.isArray(value) ? value[0] ?? null : value
+}
+
+function getCompanyName(plan: EntryPlan | ExitPlan) {
+  return getRelationOne(plan.companies)?.company_name ?? ''
+}
+
+function getSalesUserName(plan: EntryPlan | ExitPlan | DailyResult) {
+  return getRelationOne(plan.sales_users)?.name ?? ''
+}
 
   async function fetchBranches() {
     const { data, error } = await supabase
@@ -581,14 +596,14 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
       console.error(entryResult.error)
       setMessage('入職予定一覧の取得に失敗しました。')
     } else {
-      setEntryPlans((entryResult.data ?? []) as EntryPlan[])
+      setEntryPlans((entryResult.data ?? []) as unknown as EntryPlan[])
     }
 
     if (exitResult.error) {
       console.error(exitResult.error)
       setMessage('退職予定一覧の取得に失敗しました。')
     } else {
-      setExitPlans((exitResult.data ?? []) as ExitPlan[])
+      setExitPlans((exitResult.data ?? []) as unknown as ExitPlan[])
     }
 
     setLoading(false)
@@ -643,7 +658,7 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
       return
     }
 
-    setDailyResults((data ?? []) as DailyResult[])
+    setDailyResults((data ?? []) as unknown as DailyResult[])
   }
 
   async function handleCreateDailyResult() {
@@ -1308,8 +1323,8 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
 
       if (aDate !== bDate) return aDate.localeCompare(bDate)
 
-      const aName = a.sales_users?.name ?? ''
-      const bName = b.sales_users?.name ?? ''
+      const aName = getSalesUserName(a)
+      const bName = getSalesUserName(b)
 
       return aName.localeCompare(bName)
     })
@@ -1597,8 +1612,8 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
     const rows = sortedEntryPlans.map((plan) => ({
       確度: plan.certainty_rank ?? '',
       氏名: plan.worker_name ?? '',
-      企業名: plan.companies?.company_name ?? '',
-      担当: plan.sales_users?.name ?? '',
+      企業名: getCompanyName(plan),
+      担当: getSalesUserName(plan),
       見学日: plan.tour_date ?? '',
       入職日: plan.entry_date ?? '',
       人選状況: plan.selection_status ?? '',
@@ -1619,8 +1634,8 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
     const rows = sortedExitPlans.map((plan) => ({
       状態: plan.status ?? '',
       氏名: plan.worker_name ?? '',
-      企業名: plan.companies?.company_name ?? '',
-      担当: plan.sales_users?.name ?? '',
+      企業名: getCompanyName(plan),
+      担当: getSalesUserName(plan),
       退職日: plan.exit_date ?? '',
       再稼働: plan.reemployment_status ?? '',
       理由: plan.exit_reason ?? '',
@@ -1640,7 +1655,7 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
   function createDailyResultsSheet(workbook: XLSX.WorkBook) {
     const rows = sortedDailyResults.map((result) => ({
       日付: result.result_date,
-      担当: result.sales_users?.name ?? '',
+      担当: getSalesUserName(result),
       新規: Number(result.new_count ?? 0),
       増員: Number(result.increase_count ?? 0),
       退社: Number(result.exit_count ?? 0),
