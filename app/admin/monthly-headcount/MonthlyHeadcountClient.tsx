@@ -2272,7 +2272,7 @@ function getSalesUserName(plan: EntryPlan | ExitPlan | DailyResult) {
                           ].join(' ')}
                         >
                           <td className="px-3 py-2">{result.result_date}</td>
-                          <td className="px-3 py-2 font-semibold text-gray-900">{result.sales_users?.name ?? '-'}</td>
+                          <td className="px-3 py-2 font-semibold text-gray-900">{getSalesUserName(result) || '-'}</td>
                           <td className="px-3 py-2 text-right text-blue-700">{Number(result.new_count ?? 0)}</td>
                           <td className="px-3 py-2 text-right text-green-700">{Number(result.increase_count ?? 0)}</td>
                           <td className="px-3 py-2 text-right text-red-700">{Number(result.exit_count ?? 0)}</td>
