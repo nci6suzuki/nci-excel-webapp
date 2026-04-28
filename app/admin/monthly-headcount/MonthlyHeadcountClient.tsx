@@ -1098,6 +1098,120 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
     })
   }, [salesUsers, selectedSalesUserId, monthlyPlansForUsers, entryPlans, exitPlans, dailyResults])
 
+  const workforceChangeRows = useMemo(() => {
+    const normalizeText = (value: string | null | undefined) => {
+      return String(value ?? '').normalize('NFKC').trim()
+    }
+
+    const isEntryConfirmed = (item: EntryPlan) => {
+      const certainty = normalizeText(item.certainty_rank)
+      const status = normalizeText(item.status)
+
+      return (
+        certainty === '確定' ||
+        status === '確定' ||
+        status === '入職済み'
+      )
+    }
+
+    const isExitConfirmed = (item: ExitPlan) => {
+      const status = normalizeText(item.status)
+      return status === '確定' || status === '退職済み'
+    }
+
+    const activeEntries = entryPlans.filter((item) => normalizeText(item.status) !== '取消')
+    const activeExits = exitPlans.filter((item) => normalizeText(item.status) !== '取消')
+
+    const { start, end } = getMonthRange(targetMonth)
+    const rows: {
+      date: string
+      weekday: string
+      beforeHeadcount: number
+      entryConfirmed: number
+      exitConfirmed: number
+      confirmedNet: number
+      confirmedHeadcount: number
+      newCount: number
+      increaseCount: number
+      actualExitCount: number
+      actualNet: number
+      actualHeadcount: number
+      confirmedPlanDiff: number
+      actualPlanDiff: number
+    }[] = []
+
+    let currentConfirmedHeadcount = startHeadcount
+    let currentActualHeadcount = startHeadcount
+
+    const cursor = new Date(`${start}T00:00:00`)
+    const endDate = new Date(`${end}T00:00:00`)
+    const weekdayLabels = ['日', '月', '火', '水', '木', '金', '土']
+
+    while (cursor < endDate) {
+      const yyyy = cursor.getFullYear()
+      const mm = String(cursor.getMonth() + 1).padStart(2, '0')
+      const dd = String(cursor.getDate()).padStart(2, '0')
+      const date = `${yyyy}-${mm}-${dd}`
+      const beforeHeadcount = currentConfirmedHeadcount
+
+      const entryConfirmed = activeEntries.filter((item) => {
+        return isEntryConfirmed(item) && item.entry_date === date
+      }).length
+
+      const exitConfirmed = activeExits.filter((item) => {
+        return isExitConfirmed(item) && item.exit_date === date
+      }).length
+
+      const confirmedNet = entryConfirmed - exitConfirmed
+      currentConfirmedHeadcount += confirmedNet
+
+      const dailyItems = dailyResults.filter((item) => item.result_date === date)
+      const newCount = dailyItems.reduce((sum, item) => sum + Number(item.new_count ?? 0), 0)
+      const increaseCount = dailyItems.reduce((sum, item) => sum + Number(item.increase_count ?? 0), 0)
+      const actualExitCount = dailyItems.reduce((sum, item) => sum + Number(item.exit_count ?? 0), 0)
+      const actualNet = newCount + increaseCount - actualExitCount
+      currentActualHeadcount += actualNet
+
+      rows.push({
+        date,
+        weekday: weekdayLabels[cursor.getDay()],
+        beforeHeadcount,
+        entryConfirmed,
+        exitConfirmed,
+        confirmedNet,
+        confirmedHeadcount: currentConfirmedHeadcount,
+        newCount,
+        increaseCount,
+        actualExitCount,
+        actualNet,
+        actualHeadcount: currentActualHeadcount,
+        confirmedPlanDiff: currentConfirmedHeadcount - headcountPlan,
+        actualPlanDiff: currentActualHeadcount - headcountPlan,
+      })
+
+      cursor.setDate(cursor.getDate() + 1)
+    }
+
+    return rows
+  }, [targetMonth, startHeadcount, headcountPlan, entryPlans, exitPlans, dailyResults])
+
+  const workforceChangeSummary = useMemo(() => {
+    const lastRow = workforceChangeRows[workforceChangeRows.length - 1]
+    const totalEntryConfirmed = workforceChangeRows.reduce((sum, row) => sum + row.entryConfirmed, 0)
+    const totalExitConfirmed = workforceChangeRows.reduce((sum, row) => sum + row.exitConfirmed, 0)
+    const totalActualNet = workforceChangeRows.reduce((sum, row) => sum + row.actualNet, 0)
+
+    return {
+      confirmedHeadcount: lastRow?.confirmedHeadcount ?? startHeadcount,
+      actualHeadcount: lastRow?.actualHeadcount ?? startHeadcount,
+      totalEntryConfirmed,
+      totalExitConfirmed,
+      totalActualNet,
+      confirmedPlanDiff: (lastRow?.confirmedHeadcount ?? startHeadcount) - headcountPlan,
+      actualPlanDiff: (lastRow?.actualHeadcount ?? startHeadcount) - headcountPlan,
+    }
+  }, [workforceChangeRows, startHeadcount, headcountPlan])
+
 
   const selectedBranchName = useMemo(() => {
     return branches.find((branch) => branch.id === selectedBranchId)?.branch_name ?? '未選択'
@@ -1225,6 +1339,28 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
     addJsonSheet(workbook, '日次実績一覧', rows, [12, 14, 8, 8, 8, 10, 30])
   }
 
+
+  function createWorkforceChangeSheet(workbook: XLSX.WorkBook) {
+    const rows = workforceChangeRows.map((row) => ({
+      日付: row.date,
+      曜日: row.weekday,
+      前日確定稼働: row.beforeHeadcount,
+      入職確定: row.entryConfirmed,
+      退職確定: row.exitConfirmed,
+      確定増減: row.confirmedNet,
+      確定稼働: row.confirmedHeadcount,
+      新規: row.newCount,
+      増員: row.increaseCount,
+      退社: row.actualExitCount,
+      実績純増: row.actualNet,
+      実績稼働: row.actualHeadcount,
+      確定PLAN差: row.confirmedPlanDiff,
+      実績PLAN差: row.actualPlanDiff,
+    }))
+
+    addJsonSheet(workbook, '稼働人員変動表', rows, [12, 8, 14, 10, 10, 10, 12, 8, 8, 8, 10, 12, 12, 12])
+  }
+
   function downloadWorkbook(workbook: XLSX.WorkBook, suffix: string) {
     const branchName = sanitizeFileName(selectedBranchName || '支店未選択')
     const fileName = `${targetMonth}_${branchName}_${suffix}.xlsx`
@@ -1234,6 +1370,7 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
   function handleExportReportExcel() {
     const workbook = XLSX.utils.book_new()
     createSummarySheet(workbook)
+    createWorkforceChangeSheet(workbook)
     createPersonalPerformanceSheet(workbook)
     downloadWorkbook(workbook, '陣立て表・個人別実績')
   }
@@ -1249,6 +1386,7 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
   function handleExportAllExcel() {
     const workbook = XLSX.utils.book_new()
     createSummarySheet(workbook)
+    createWorkforceChangeSheet(workbook)
     createPersonalPerformanceSheet(workbook)
     createEntryListSheet(workbook)
     createExitListSheet(workbook)
@@ -1443,6 +1581,95 @@ export default function MonthlyHeadcountClient({ mode }: { mode: MonthlyHeadcoun
           </div>
         </section>
 
+        )}
+
+        {mode === 'report' && (
+          <section className="rounded-xl bg-white p-4 shadow-sm">
+            <div className="mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">
+                稼働人員変動表
+              </h2>
+              <p className="text-sm text-gray-500">
+                月初人数を起点に、日別の入職確定・退職確定・日次実績の純増から稼働人数の推移を表示します。
+              </p>
+            </div>
+
+            <div className="mb-4 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+              <SummaryCard label="月初人数" value={startHeadcount} suffix="名" />
+              <SummaryCard label="入職確定計" value={workforceChangeSummary.totalEntryConfirmed} suffix="名" />
+              <SummaryCard label="退職確定計" value={workforceChangeSummary.totalExitConfirmed} suffix="名" />
+              <SummaryCard label="確定稼働" value={workforceChangeSummary.confirmedHeadcount} suffix="名" />
+              <SummaryCard label="実績純増" value={workforceChangeSummary.totalActualNet} suffix="名" />
+              <SummaryCard label="実績PLAN差" value={workforceChangeSummary.actualPlanDiff} suffix="名" />
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1250px] table-fixed border-collapse text-sm tabular-nums">
+                <colgroup>
+                  <col className="w-[110px]" />
+                  <col className="w-[60px]" />
+                  <col className="w-[110px]" />
+                  <col className="w-[90px]" />
+                  <col className="w-[90px]" />
+                  <col className="w-[90px]" />
+                  <col className="w-[100px]" />
+                  <col className="w-[70px]" />
+                  <col className="w-[70px]" />
+                  <col className="w-[70px]" />
+                  <col className="w-[90px]" />
+                  <col className="w-[100px]" />
+                  <col className="w-[105px]" />
+                  <col className="w-[105px]" />
+                </colgroup>
+                <thead>
+                  <tr className="border-b bg-gray-100 text-left">
+                    <th className="px-3 py-2">日付</th>
+                    <th className="px-3 py-2 text-center">曜</th>
+                    <th className="px-3 py-2 text-right">前日確定</th>
+                    <th className="px-3 py-2 text-right">入職確定</th>
+                    <th className="px-3 py-2 text-right">退職確定</th>
+                    <th className="px-3 py-2 text-right">確定増減</th>
+                    <th className="px-3 py-2 text-right">確定稼働</th>
+                    <th className="px-3 py-2 text-right">新規</th>
+                    <th className="px-3 py-2 text-right">増員</th>
+                    <th className="px-3 py-2 text-right">退社</th>
+                    <th className="px-3 py-2 text-right">実績純増</th>
+                    <th className="px-3 py-2 text-right">実績稼働</th>
+                    <th className="px-3 py-2 text-right">確定PLAN差</th>
+                    <th className="px-3 py-2 text-right">実績PLAN差</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {workforceChangeRows.map((row) => (
+                    <tr key={row.date} className="border-b hover:bg-slate-50">
+                      <td className="px-3 py-2 font-semibold text-gray-900">{row.date}</td>
+                      <td className="px-3 py-2 text-center text-gray-500">{row.weekday}</td>
+                      <td className="px-3 py-2 text-right">{row.beforeHeadcount}</td>
+                      <td className="px-3 py-2 text-right text-blue-700">{row.entryConfirmed}</td>
+                      <td className="px-3 py-2 text-right text-red-700">{row.exitConfirmed}</td>
+                      <td className={["px-3 py-2 text-right font-semibold", row.confirmedNet < 0 ? "text-red-600" : row.confirmedNet > 0 ? "text-blue-600" : "text-gray-700"].join(' ')}>
+                        {row.confirmedNet > 0 ? '+' : ''}{row.confirmedNet}
+                      </td>
+                      <td className="px-3 py-2 text-right font-semibold">{row.confirmedHeadcount}</td>
+                      <td className="px-3 py-2 text-right text-blue-700">{row.newCount}</td>
+                      <td className="px-3 py-2 text-right text-green-700">{row.increaseCount}</td>
+                      <td className="px-3 py-2 text-right text-red-700">{row.actualExitCount}</td>
+                      <td className={["px-3 py-2 text-right font-semibold", row.actualNet < 0 ? "text-red-600" : row.actualNet > 0 ? "text-blue-600" : "text-gray-700"].join(' ')}>
+                        {row.actualNet > 0 ? '+' : ''}{row.actualNet}
+                      </td>
+                      <td className="px-3 py-2 text-right font-semibold">{row.actualHeadcount}</td>
+                      <td className={["px-3 py-2 text-right font-bold", row.confirmedPlanDiff < 0 ? "text-red-600" : "text-blue-600"].join(' ')}>
+                        {row.confirmedPlanDiff > 0 ? '+' : ''}{row.confirmedPlanDiff}
+                      </td>
+                      <td className={["px-3 py-2 text-right font-bold", row.actualPlanDiff < 0 ? "text-red-600" : "text-blue-600"].join(' ')}>
+                        {row.actualPlanDiff > 0 ? '+' : ''}{row.actualPlanDiff}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
         )}
 
         {mode === 'input' && (
