@@ -15,6 +15,8 @@ type SalesUser = {
   branch_id: string | null
 }
 
+type RelationOne<T> = T | T[] | null
+
 type UserRole = {
   id: string
   user_id: string
@@ -24,12 +26,12 @@ type UserRole = {
   branch_id: string | null
   sales_user_id: string | null
   is_active: boolean | null
-  branches?: {
-    branch_name: string
-  } | null
-  sales_users?: {
-    name: string
-  } | null
+branches?: RelationOne<{
+  branch_name: string | null
+}>
+sales_users?: RelationOne<{
+  name: string | null
+}>
 }
 
 const roleOptions = [
@@ -58,14 +60,27 @@ export default function AdminUsersPage() {
     is_active: true,
   })
 
-  const filteredSalesUsers = useMemo(() => {
-    if (!form.branch_id) return salesUsers
-    return salesUsers.filter((user) => user.branch_id === form.branch_id)
-  }, [form.branch_id, salesUsers])
+const filteredSalesUsers = useMemo(() => {
+  if (!form.branch_id) return salesUsers
+  return salesUsers.filter((user) => user.branch_id === form.branch_id)
+}, [form.branch_id, salesUsers])
 
-  useEffect(() => {
-    initialize()
-  }, [])
+function getRelationOne<T>(value: RelationOne<T> | undefined): T | null {
+  if (!value) return null
+  return Array.isArray(value) ? value[0] ?? null : value
+}
+
+function getBranchName(row: UserRole) {
+  return getRelationOne(row.branches)?.branch_name ?? ''
+}
+
+function getSalesUserName(row: UserRole) {
+  return getRelationOne(row.sales_users)?.name ?? ''
+}
+
+useEffect(() => {
+  initialize()
+}, [])
 
   async function initialize() {
     setLoading(true)
@@ -115,7 +130,7 @@ export default function AdminUsersPage() {
       return
     }
 
-    setCurrentRole(roleData as UserRole)
+    setCurrentRole(roleData as unknown as UserRole)
 
     await Promise.all([fetchBranches(), fetchSalesUsers(), fetchUserRoles()])
 
@@ -178,7 +193,7 @@ export default function AdminUsersPage() {
       return
     }
 
-    setUserRoles((data ?? []) as UserRole[])
+    setUserRoles((data ?? []) as unknown as UserRole[])
   }
 
   function resetForm() {
@@ -422,8 +437,8 @@ export default function AdminUsersPage() {
                               {row.role}
                             </span>
                           </td>
-                          <td className="px-3 py-2">{row.branches?.branch_name ?? '-'}</td>
-                          <td className="px-3 py-2">{row.sales_users?.name ?? '-'}</td>
+                          <td className="px-3 py-2">{getBranchName(row) || '-'}</td>
+                          <td className="px-3 py-2">{getSalesUserName(row) || '-'}</td>
                           <td className="px-3 py-2">
                             {row.is_active ? (
                               <span className="text-sm font-bold text-green-700">有効</span>
