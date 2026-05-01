@@ -12,7 +12,7 @@ type CurrentUserRole = {
   role: 'admin' | 'manager' | 'user'
   branch_id: string | null
   sales_user_id: string | null
-  branches?: { branch_name: string } | null
+  branches: { branch_name: string | null } | null
 }
 
 const navItems = [
@@ -50,7 +50,16 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
       .eq('user_id', user.id)
       .eq('is_active', true)
       .maybeSingle()
-    setCurrentRole((data as CurrentUserRole | null) ?? null)
+const normalizedRole = data
+  ? {
+      ...data,
+      branches: Array.isArray(data.branches)
+        ? data.branches[0] ?? null
+        : data.branches ?? null,
+    }
+  : null
+
+setCurrentRole(normalizedRole as CurrentUserRole | null)
     setLoadingRole(false)
   }
 
