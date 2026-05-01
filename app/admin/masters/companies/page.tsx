@@ -12,8 +12,8 @@ type Company = {
   sales_user_id: string | null
   display_order: number | null
   is_active: boolean | null
-  branches?: { branch_name: string } | null
-  sales_users?: { name: string } | null
+  branches: { branch_name: string | null } | null
+  sales_users: { name: string | null } | null
 }
 
 export default function CompanyMasterPage() {
@@ -42,11 +42,32 @@ export default function CompanyMasterPage() {
     setSalesUsers(data ?? [])
   }
 
-  async function fetchRows() {
-    const { data, error } = await supabase.from('companies').select('id, company_name, branch_id, sales_user_id, display_order, is_active, branches(branch_name), sales_users(name)').order('display_order', { ascending: true }).order('company_name', { ascending: true })
-    if (error) return setMessage(`企業マスタの取得に失敗しました：${error.message}`)
-    setRows((data ?? []) as Company[])
+async function fetchRows() {
+  const { data, error } = await supabase
+    .from('companies')
+    .select(
+      'id, company_name, branch_id, sales_user_id, display_order, is_active, branches(branch_name), sales_users(name)'
+    )
+    .order('display_order', { ascending: true })
+    .order('company_name', { ascending: true })
+
+  if (error) {
+    setMessage(`企業マスタの取得に失敗しました：${error.message}`)
+    return
   }
+
+  const normalizedRows = (data ?? []).map((row) => ({
+    ...row,
+    branches: Array.isArray(row.branches)
+      ? row.branches[0] ?? null
+      : row.branches ?? null,
+    sales_users: Array.isArray(row.sales_users)
+      ? row.sales_users[0] ?? null
+      : row.sales_users ?? null,
+  }))
+
+  setRows(normalizedRows as Company[])
+}
 
   async function handleSave() {
     if (!form.company_name.trim() || !form.branch_id) return setMessage('企業名と支店は必須です。')
