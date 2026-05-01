@@ -11,7 +11,7 @@ type SalesUser = {
   role: string | null
   display_order: number | null
   is_active: boolean | null
-  branches?: { branch_name: string } | null
+  branches: { branch_name: string | null } | null
 }
 
 export default function SalesUserMasterPage() {
@@ -33,11 +33,27 @@ export default function SalesUserMasterPage() {
     setBranches(data ?? [])
   }
 
-  async function fetchRows() {
-    const { data, error } = await supabase.from('sales_users').select('id, name, branch_id, role, display_order, is_active, branches(branch_name)').order('display_order', { ascending: true }).order('name', { ascending: true })
-    if (error) return setMessage(`担当者マスタの取得に失敗しました：${error.message}`)
-    setRows((data ?? []) as SalesUser[])
+async function fetchRows() {
+  const { data, error } = await supabase
+    .from('sales_users')
+    .select('id, name, branch_id, role, display_order, is_active, branches(branch_name)')
+    .order('display_order', { ascending: true })
+    .order('name', { ascending: true })
+
+  if (error) {
+    setMessage(`担当者マスタの取得に失敗しました：${error.message}`)
+    return
   }
+
+  const normalizedRows = (data ?? []).map((row) => ({
+    ...row,
+    branches: Array.isArray(row.branches)
+      ? row.branches[0] ?? null
+      : row.branches ?? null,
+  }))
+
+  setRows(normalizedRows as SalesUser[])
+}
 
   async function handleSave() {
     if (!form.name.trim() || !form.branch_id) return setMessage('氏名と所属支店は必須です。')
