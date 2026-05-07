@@ -34,11 +34,12 @@ const navItems = [
   roles: ['admin', 'manager', 'user'],
 },
 {
-  label: '終了処理',
-  description: '退職予定スタッフを終了',
-  href: '/admin/staff/exit',
+  label: '配置変更',
+  description: 'スタッフ異動・配置履歴',
+  href: '/admin/staff/transfer',
   roles: ['admin', 'manager', 'user'],
 },
+
   { label: '支店マスタ', description: '支店の登録・編集', href: '/admin/masters/branches', roles: ['admin'] },
   { label: '担当者マスタ', description: '営業担当者の登録・編集', href: '/admin/masters/sales-users', roles: ['admin', 'manager'] },
   { label: '企業マスタ', description: '派遣先企業の登録・編集', href: '/admin/masters/companies', roles: ['admin', 'manager'] },
