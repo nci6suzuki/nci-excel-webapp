@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../../lib/supabase/client'
+import Link from 'next/link'
 
 type CurrentUserRole = {
   user_id: string
@@ -61,6 +62,19 @@ type ExitPlan = {
   company_id: string | null
   exit_date: string | null
   status: string | null
+}
+
+type CurrentStaff = {
+  id: string
+  branch_id: string
+  company_id: string
+  sales_user_id: string | null
+  staff_name: string
+  start_date: string | null
+  employment_status: string | null
+  planned_exit_date: string | null
+  memo: string | null
+  is_active: boolean | null
 }
 
 function getCurrentMonth() {
@@ -124,6 +138,7 @@ export default function WorkforceMapPage() {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  const [currentStaffList, setCurrentStaffList] = useState<CurrentStaff[]>([])
 
   useEffect(() => {
     initialize()
@@ -233,6 +248,12 @@ export default function WorkforceMapPage() {
       .gte('exit_date', start)
       .lt('exit_date', end)
 
+    let currentStaffQuery = supabase
+      .from('current_staff_assignments')
+      .select('id, branch_id, company_id, sales_user_id, staff_name, start_date, employment_status, planned_exit_date, memo, is_active')
+      .eq('is_active', true)
+      .in('employment_status', ['就業中', '休職中', '退職予定'])
+
     if (currentRole.role !== 'admin' && currentRole.branch_id) {
       branchQuery = branchQuery.eq('id', currentRole.branch_id)
       companyQuery = companyQuery.eq('branch_id', currentRole.branch_id)
@@ -258,18 +279,34 @@ export default function WorkforceMapPage() {
       exitQuery = exitQuery.eq('sales_user_id', selectedSalesUserId)
     }
 
+    if (currentRole.role !== 'admin' && currentRole.branch_id) {
+      currentStaffQuery = currentStaffQuery.eq('branch_id', currentRole.branch_id)
+    }
+    
+    if (selectedBranchId) {
+      currentStaffQuery = currentStaffQuery.eq('branch_id', selectedBranchId)
+    }
+    
+    if (currentRole.role === 'user' && currentRole.sales_user_id) {
+      currentStaffQuery = currentStaffQuery.eq('sales_user_id', currentRole.sales_user_id)
+    } else if (selectedSalesUserId) {
+      currentStaffQuery = currentStaffQuery.eq('sales_user_id', selectedSalesUserId)
+    }
+
     const [
       branchResult,
       companyResult,
       headcountResult,
       entryResult,
       exitResult,
+      currentStaffResult
     ] = await Promise.all([
       branchQuery,
       companyQuery,
       headcountQuery,
       entryQuery,
       exitQuery,
+      currentStaffQuery
     ])
 
     const firstError =
@@ -277,7 +314,8 @@ export default function WorkforceMapPage() {
       companyResult.error ||
       headcountResult.error ||
       entryResult.error ||
-      exitResult.error
+      exitResult.error ||
+      currentStaffResult.error
 
     if (firstError) {
       setMessage(`マップ図データの取得に失敗しました：${firstError.message}`)
@@ -290,6 +328,7 @@ export default function WorkforceMapPage() {
     setCompanyHeadcounts((headcountResult.data ?? []) as CompanyMonthlyHeadcount[])
     setEntryPlans((entryResult.data ?? []) as EntryPlan[])
     setExitPlans((exitResult.data ?? []) as ExitPlan[])
+    setCurrentStaffList((currentStaffResult.data ?? []) as CurrentStaff[])
 
     setLoading(false)
   }
@@ -361,64 +400,18 @@ export default function WorkforceMapPage() {
     setSaving(false)
   }
 
-  const mapRows = useMemo(() => {
-    return companies.map((company) => {
-      const headcount = companyHeadcounts.find((item) => item.company_id === company.id)
-
-      const activeEntries = entryPlans.filter((item) => {
-        return item.company_id === company.id && isActive(item.status)
-      })
-
-      const activeExits = exitPlans.filter((item) => {
-        return item.company_id === company.id && isActive(item.status)
-      })
-
-      const confirmedEntries = activeEntries.filter(isEntryConfirmed).length
-      const prospects = activeEntries.filter((item) => !isEntryConfirmed(item))
-
-      const exitConfirmed = activeExits.filter(isExitConfirmed).length
-
-      const aCount = prospects.filter((item) => normalizeText(item.certainty_rank).includes('A')).length
-      const bCount = prospects.filter((item) => normalizeText(item.certainty_rank).includes('B')).length
-      const cCount = prospects.filter((item) => normalizeText(item.certainty_rank).includes('C')).length
-
-      const startHeadcount = Number(headcount?.start_headcount ?? 0)
-      const plan = Number(headcount?.headcount_plan ?? 0)
-      const confirmedLanding = startHeadcount + confirmedEntries - exitConfirmed
-      const landingWithAB = confirmedLanding + aCount + bCount
-      const landingWithABC = confirmedLanding + aCount + bCount + cCount
-      const planDiff = landingWithAB - plan
-
-      return {
-        company,
-        startHeadcount,
-        plan,
-        confirmedEntries,
-        exitConfirmed,
-        aCount,
-        bCount,
-        cCount,
-        confirmedLanding,
-        landingWithAB,
-        landingWithABC,
-        planDiff,
-        memo: headcount?.memo ?? '',
-      }
+const mapRows = useMemo(() => {
+  return companies.map((company) => {
+    const currentStaff = currentStaffList.filter((staff) => {
+      return staff.company_id === company.id
     })
-  }, [companies, companyHeadcounts, entryPlans, exitPlans])
 
-  const summary = useMemo(() => {
     return {
-      companyCount: mapRows.length,
-      startHeadcount: mapRows.reduce((sum, row) => sum + row.startHeadcount, 0),
-      plan: mapRows.reduce((sum, row) => sum + row.plan, 0),
-      landingWithAB: mapRows.reduce((sum, row) => sum + row.landingWithAB, 0),
-      planDiff: mapRows.reduce((sum, row) => sum + row.planDiff, 0),
-      aCount: mapRows.reduce((sum, row) => sum + row.aCount, 0),
-      bCount: mapRows.reduce((sum, row) => sum + row.bCount, 0),
-      cCount: mapRows.reduce((sum, row) => sum + row.cCount, 0),
+      company,
+      currentStaff,
     }
-  }, [mapRows])
+  })
+}, [companies, currentStaffList])
 
   const salesUsersForFilter = useMemo(() => {
     const map = new Map<string, { id: string; name: string }>()
@@ -601,19 +594,6 @@ export default function WorkforceMapPage() {
           </section>
         )}
 
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <MapMetric label="企業数" value={summary.companyCount} suffix="社" />
-          <MapMetric label="月初人数" value={summary.startHeadcount} suffix="名" />
-          <MapMetric label="A+B着地" value={summary.landingWithAB} suffix="名" />
-          <MapMetric label="PLAN差" value={summary.planDiff} suffix="名" signed />
-        </section>
-
-        <section className="grid gap-4 md:grid-cols-3">
-          <MapMetric label="A見込み" value={summary.aCount} suffix="名" />
-          <MapMetric label="B見込み" value={summary.bCount} suffix="名" />
-          <MapMetric label="C見込み" value={summary.cCount} suffix="名" />
-        </section>
-
         {viewMode === 'card' ? (
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {mapRows.map((row) => (
@@ -658,18 +638,6 @@ export default function WorkforceMapPage() {
                       <td className="px-3 py-2">{row.company.branches?.branch_name ?? '-'}</td>
                       <td className="px-3 py-2 font-bold text-slate-900">{row.company.company_name}</td>
                       <td className="px-3 py-2">{row.company.sales_users?.name ?? '-'}</td>
-                      <td className="px-3 py-2 text-right">{row.plan}</td>
-                      <td className="px-3 py-2 text-right">{row.startHeadcount}</td>
-                      <td className="px-3 py-2 text-right text-blue-700">{row.confirmedEntries}</td>
-                      <td className="px-3 py-2 text-right text-red-700">{row.exitConfirmed}</td>
-                      <td className="px-3 py-2 text-right font-bold">{row.confirmedLanding}</td>
-                      <td className="px-3 py-2 text-right text-green-700">{row.aCount}</td>
-                      <td className="px-3 py-2 text-right text-yellow-700">{row.bCount}</td>
-                      <td className="px-3 py-2 text-right text-orange-700">{row.cCount}</td>
-                      <td className="px-3 py-2 text-right font-bold">{row.landingWithAB}</td>
-                      <td className={['px-3 py-2 text-right font-black', row.planDiff < 0 ? 'text-red-600' : 'text-blue-600'].join(' ')}>
-                        {row.planDiff > 0 ? '+' : ''}{row.planDiff}
-                      </td>
                       <td className="px-3 py-2">
                         <button
                           onClick={() => startEditCompany(row.company.id)}
@@ -739,72 +707,63 @@ function CompanyMapCard({
 }: {
   row: {
     company: Company
-    startHeadcount: number
-    plan: number
-    confirmedEntries: number
-    exitConfirmed: number
-    aCount: number
-    bCount: number
-    cCount: number
-    confirmedLanding: number
-    landingWithAB: number
-    landingWithABC: number
-    planDiff: number
-    memo: string
+    currentStaff: CurrentStaff[]
   }
   onEdit: () => void
 }) {
-  const planTone =
-    row.planDiff < 0
-      ? 'border-red-200 bg-red-50'
-      : row.planDiff > 0
-        ? 'border-blue-200 bg-blue-50'
-        : 'border-slate-200 bg-white'
-
   return (
-    <div className={['rounded-2xl border p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md', planTone].join(' ')}>
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-bold text-slate-500">
             {row.company.branches?.branch_name ?? '支店未設定'}
           </p>
+
           <h2 className="mt-1 text-lg font-black text-slate-900">
             {row.company.company_name}
           </h2>
+
           <p className="mt-1 text-xs font-semibold text-slate-500">
             担当：{row.company.sales_users?.name ?? '未設定'}
           </p>
         </div>
 
-        <button
-          onClick={onEdit}
-          className="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100"
-        >
-          人数設定
-        </button>
+<Link
+  href="/admin/staff/current"
+  className="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100"
+>
+  スタッフ管理
+</Link>
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
-        <SmallMetric label="PLAN" value={row.plan} />
-        <SmallMetric label="月初" value={row.startHeadcount} />
-        <SmallMetric label="確定着地" value={row.confirmedLanding} />
-        <SmallMetric label="入職" value={row.confirmedEntries} tone="blue" />
-        <SmallMetric label="退職" value={row.exitConfirmed} tone="red" />
-        <SmallMetric label="A+B着地" value={row.landingWithAB} tone="bold" />
-      </div>
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-xs font-black text-slate-700">
+            就業中スタッフ
+          </p>
 
-      <div className="mt-4 grid grid-cols-4 gap-2">
-        <Pill label="A" value={row.aCount} color="green" />
-        <Pill label="B" value={row.bCount} color="yellow" />
-        <Pill label="C" value={row.cCount} color="orange" />
-        <Pill label="差" value={row.planDiff} color={row.planDiff < 0 ? 'red' : 'blue'} signed />
-      </div>
-
-      {row.memo && (
-        <div className="mt-4 rounded-xl border border-slate-200 bg-white/70 px-3 py-2 text-xs font-semibold text-slate-600">
-          {row.memo}
+          <span className="rounded-full bg-white px-2 py-0.5 text-xs font-bold text-slate-600">
+            {row.currentStaff.length}名
+          </span>
         </div>
-      )}
+
+        {row.currentStaff.length === 0 ? (
+          <p className="text-xs font-semibold text-slate-400">
+            登録なし
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-1.5">
+            {row.currentStaff.map((staff) => (
+              <span
+                key={staff.id}
+                className="rounded-full border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-slate-700"
+              >
+                {staff.staff_name}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
