@@ -27,6 +27,12 @@ const navItems = [
   roles: ['admin', 'manager', 'user'],
 },
   { label: '一覧・編集', description: '登録内容の確認・修正', href: '/admin/monthly-headcount/list', roles: ['admin', 'manager', 'user'] },
+  {
+  label: 'スタッフ反映',
+  description: '入退職予定からマップ図へ反映',
+  href: '/admin/staff/sync',
+  roles: ['admin', 'manager', 'user'],
+},
   { label: '支店マスタ', description: '支店の登録・編集', href: '/admin/masters/branches', roles: ['admin'] },
   { label: '担当者マスタ', description: '営業担当者の登録・編集', href: '/admin/masters/sales-users', roles: ['admin', 'manager'] },
   { label: '企業マスタ', description: '派遣先企業の登録・編集', href: '/admin/masters/companies', roles: ['admin', 'manager'] },
