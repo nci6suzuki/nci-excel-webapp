@@ -1,0 +1,8 @@
+AdminShell.tsx の navItems に以下を追加してください。
+
+{
+  label: 'スタッフ取込',
+  description: '就業中スタッフCSV取込',
+  href: '/admin/staff/import',
+  roles: ['admin', 'manager', 'user'],
+},

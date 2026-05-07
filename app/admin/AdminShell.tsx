@@ -42,7 +42,13 @@ const navItems = [
   description: '朝の確認ダッシュボード',
   href: '/admin/today',
   roles: ['admin', 'manager', 'user'],
-}
+},
+{
+  label: 'スタッフ取込',
+  description: '就業中スタッフCSV取込',
+  href: '/admin/staff/import',
+  roles: ['admin', 'manager', 'user'],
+},
 ]
 
 function isActivePath(pathname: string, href: string) {
