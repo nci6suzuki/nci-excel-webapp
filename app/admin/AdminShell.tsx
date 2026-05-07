@@ -25,6 +25,18 @@ const navItems = [
   { label: '担当者マスタ', description: '営業担当者の登録・編集', href: '/admin/masters/sales-users', roles: ['admin', 'manager'] },
   { label: '企業マスタ', description: '派遣先企業の登録・編集', href: '/admin/masters/companies', roles: ['admin', 'manager'] },
   { label: 'ユーザー管理', description: '権限・支店・担当者設定', href: '/admin/users', roles: ['admin'] },
+{
+  label: '要対応',
+  description: '見学・入退職・実績アラート',
+  href: '/admin/alerts',
+  roles: ['admin', 'manager', 'user'],
+},
+{
+  label: '本日確認',
+  description: '朝の確認ダッシュボード',
+  href: '/admin/today',
+  roles: ['admin', 'manager', 'user'],
+}
 ]
 
 function isActivePath(pathname: string, href: string) {
