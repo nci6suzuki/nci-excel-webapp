@@ -192,12 +192,12 @@ export default function TodayCheckPage() {
       return
     }
 
-    setBranches((branchResult.data ?? []) as Branch[])
-    setSalesUsers((salesUserResult.data ?? []) as SalesUser[])
-    setMonthlyPlans((monthlyPlanResult.data ?? []) as MonthlyPlan[])
-    setEntryPlans((entryResult.data ?? []) as EntryPlan[])
-    setExitPlans((exitResult.data ?? []) as ExitPlan[])
-    setDailyResults((dailyResult.data ?? []) as DailyResult[])
+setBranches((branchResult.data ?? []) as Branch[])
+setSalesUsers((salesUserResult.data ?? []) as unknown as SalesUser[])
+setMonthlyPlans((monthlyPlanResult.data ?? []) as MonthlyPlan[])
+setEntryPlans((entryResult.data ?? []) as unknown as EntryPlan[])
+setExitPlans((exitResult.data ?? []) as unknown as ExitPlan[])
+setDailyResults((dailyResult.data ?? []) as unknown as DailyResult[])
     setLoading(false)
   }
 
