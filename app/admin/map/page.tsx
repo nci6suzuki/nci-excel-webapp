@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '../../../lib/supabase/client'
 import Link from 'next/link'
+import { supabase } from '../../../lib/supabase/client'
 
 type CurrentUserRole = {
   user_id: string
@@ -31,39 +31,6 @@ type Company = {
   } | null
 }
 
-type CompanyMonthlyHeadcount = {
-  id: string
-  branch_id: string
-  company_id: string
-  target_month: string
-  start_headcount: number | null
-  headcount_plan: number | null
-  memo: string | null
-}
-
-type EntryPlan = {
-  id: string
-  worker_name: string | null
-  branch_id: string | null
-  sales_user_id: string | null
-  company_id: string | null
-  tour_date: string | null
-  selection_status: string | null
-  entry_date: string | null
-  certainty_rank: string | null
-  status: string | null
-}
-
-type ExitPlan = {
-  id: string
-  worker_name: string | null
-  branch_id: string | null
-  sales_user_id: string | null
-  company_id: string | null
-  exit_date: string | null
-  status: string | null
-}
-
 type CurrentStaff = {
   id: string
   branch_id: string
@@ -84,36 +51,6 @@ function getCurrentMonth() {
   return `${y}-${m}`
 }
 
-function getMonthRange(month: string) {
-  const start = `${month}-01`
-  const startDate = new Date(`${month}-01T00:00:00`)
-  const nextMonth = new Date(startDate)
-  nextMonth.setMonth(nextMonth.getMonth() + 1)
-  const yyyy = nextMonth.getFullYear()
-  const mm = String(nextMonth.getMonth() + 1).padStart(2, '0')
-  return { start, end: `${yyyy}-${mm}-01` }
-}
-
-function normalizeText(value: string | null | undefined) {
-  return String(value ?? '').normalize('NFKC').trim()
-}
-
-function isActive(status: string | null | undefined) {
-  return normalizeText(status) !== '取消'
-}
-
-function isEntryConfirmed(item: EntryPlan) {
-  const certainty = normalizeText(item.certainty_rank)
-  const status = normalizeText(item.status)
-
-  return certainty === '確定' || status === '確定' || status === '入職済み'
-}
-
-function isExitConfirmed(item: ExitPlan) {
-  const status = normalizeText(item.status)
-  return status === '確定' || status === '退職済み'
-}
-
 export default function WorkforceMapPage() {
   const [currentRole, setCurrentRole] = useState<CurrentUserRole | null>(null)
 
@@ -124,21 +61,10 @@ export default function WorkforceMapPage() {
 
   const [branches, setBranches] = useState<Branch[]>([])
   const [companies, setCompanies] = useState<Company[]>([])
-  const [companyHeadcounts, setCompanyHeadcounts] = useState<CompanyMonthlyHeadcount[]>([])
-  const [entryPlans, setEntryPlans] = useState<EntryPlan[]>([])
-  const [exitPlans, setExitPlans] = useState<ExitPlan[]>([])
-
-  const [editingCompanyId, setEditingCompanyId] = useState<string | null>(null)
-  const [form, setForm] = useState({
-    start_headcount: '0',
-    headcount_plan: '0',
-    memo: '',
-  })
+  const [currentStaffList, setCurrentStaffList] = useState<CurrentStaff[]>([])
 
   const [loading, setLoading] = useState(false)
-  const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
-  const [currentStaffList, setCurrentStaffList] = useState<CurrentStaff[]>([])
 
   useEffect(() => {
     initialize()
@@ -209,9 +135,6 @@ export default function WorkforceMapPage() {
     setLoading(true)
     setMessage('')
 
-    const { start, end } = getMonthRange(targetMonth)
-    const targetMonthDate = `${targetMonth}-01`
-
     let branchQuery = supabase
       .from('branches')
       .select('id, branch_name')
@@ -232,89 +155,52 @@ export default function WorkforceMapPage() {
       .eq('is_active', true)
       .order('company_name', { ascending: true })
 
-    let headcountQuery = supabase
-      .from('company_monthly_headcounts')
-      .select('id, branch_id, company_id, target_month, start_headcount, headcount_plan, memo')
-      .eq('target_month', targetMonthDate)
-
-    let entryQuery = supabase
-      .from('entry_plans')
-      .select('id, worker_name, branch_id, sales_user_id, company_id, tour_date, selection_status, entry_date, certainty_rank, status')
-      .or(`and(entry_date.gte.${start},entry_date.lt.${end}),and(tour_date.gte.${start},tour_date.lt.${end})`)
-
-    let exitQuery = supabase
-      .from('exit_plans')
-      .select('id, worker_name, branch_id, sales_user_id, company_id, exit_date, status')
-      .gte('exit_date', start)
-      .lt('exit_date', end)
-
     let currentStaffQuery = supabase
       .from('current_staff_assignments')
-      .select('id, branch_id, company_id, sales_user_id, staff_name, start_date, employment_status, planned_exit_date, memo, is_active')
+      .select(`
+        id,
+        branch_id,
+        company_id,
+        sales_user_id,
+        staff_name,
+        start_date,
+        employment_status,
+        planned_exit_date,
+        memo,
+        is_active
+      `)
       .eq('is_active', true)
       .in('employment_status', ['就業中', '休職中', '退職予定'])
+      .order('staff_name', { ascending: true })
 
     if (currentRole.role !== 'admin' && currentRole.branch_id) {
       branchQuery = branchQuery.eq('id', currentRole.branch_id)
       companyQuery = companyQuery.eq('branch_id', currentRole.branch_id)
-      headcountQuery = headcountQuery.eq('branch_id', currentRole.branch_id)
-      entryQuery = entryQuery.eq('branch_id', currentRole.branch_id)
-      exitQuery = exitQuery.eq('branch_id', currentRole.branch_id)
+      currentStaffQuery = currentStaffQuery.eq('branch_id', currentRole.branch_id)
     }
 
     if (selectedBranchId) {
       companyQuery = companyQuery.eq('branch_id', selectedBranchId)
-      headcountQuery = headcountQuery.eq('branch_id', selectedBranchId)
-      entryQuery = entryQuery.eq('branch_id', selectedBranchId)
-      exitQuery = exitQuery.eq('branch_id', selectedBranchId)
+      currentStaffQuery = currentStaffQuery.eq('branch_id', selectedBranchId)
     }
 
     if (currentRole.role === 'user' && currentRole.sales_user_id) {
       companyQuery = companyQuery.eq('sales_user_id', currentRole.sales_user_id)
-      entryQuery = entryQuery.eq('sales_user_id', currentRole.sales_user_id)
-      exitQuery = exitQuery.eq('sales_user_id', currentRole.sales_user_id)
-    } else if (selectedSalesUserId) {
-      companyQuery = companyQuery.eq('sales_user_id', selectedSalesUserId)
-      entryQuery = entryQuery.eq('sales_user_id', selectedSalesUserId)
-      exitQuery = exitQuery.eq('sales_user_id', selectedSalesUserId)
-    }
-
-    if (currentRole.role !== 'admin' && currentRole.branch_id) {
-      currentStaffQuery = currentStaffQuery.eq('branch_id', currentRole.branch_id)
-    }
-    
-    if (selectedBranchId) {
-      currentStaffQuery = currentStaffQuery.eq('branch_id', selectedBranchId)
-    }
-    
-    if (currentRole.role === 'user' && currentRole.sales_user_id) {
       currentStaffQuery = currentStaffQuery.eq('sales_user_id', currentRole.sales_user_id)
     } else if (selectedSalesUserId) {
+      companyQuery = companyQuery.eq('sales_user_id', selectedSalesUserId)
       currentStaffQuery = currentStaffQuery.eq('sales_user_id', selectedSalesUserId)
     }
 
-    const [
-      branchResult,
-      companyResult,
-      headcountResult,
-      entryResult,
-      exitResult,
-      currentStaffResult
-    ] = await Promise.all([
+    const [branchResult, companyResult, currentStaffResult] = await Promise.all([
       branchQuery,
       companyQuery,
-      headcountQuery,
-      entryQuery,
-      exitQuery,
-      currentStaffQuery
+      currentStaffQuery,
     ])
 
     const firstError =
       branchResult.error ||
       companyResult.error ||
-      headcountResult.error ||
-      entryResult.error ||
-      exitResult.error ||
       currentStaffResult.error
 
     if (firstError) {
@@ -325,96 +211,48 @@ export default function WorkforceMapPage() {
 
     setBranches((branchResult.data ?? []) as Branch[])
     setCompanies((companyResult.data ?? []) as unknown as Company[])
-    setCompanyHeadcounts((headcountResult.data ?? []) as CompanyMonthlyHeadcount[])
-    setEntryPlans((entryResult.data ?? []) as EntryPlan[])
-    setExitPlans((exitResult.data ?? []) as ExitPlan[])
     setCurrentStaffList((currentStaffResult.data ?? []) as CurrentStaff[])
 
     setLoading(false)
   }
 
-  function startEditCompany(companyId: string) {
-    const existing = companyHeadcounts.find((item) => item.company_id === companyId)
-
-    setEditingCompanyId(companyId)
-    setForm({
-      start_headcount: String(existing?.start_headcount ?? 0),
-      headcount_plan: String(existing?.headcount_plan ?? 0),
-      memo: existing?.memo ?? '',
-    })
-
-    window.scrollTo({
-      top: 0,
-      behavior: 'smooth',
-    })
-  }
-
-  function cancelEdit() {
-    setEditingCompanyId(null)
-    setForm({
-      start_headcount: '0',
-      headcount_plan: '0',
-      memo: '',
-    })
-  }
-
-  async function saveCompanyHeadcount() {
-    if (!editingCompanyId) return
-
-    const company = companies.find((item) => item.id === editingCompanyId)
-
-    if (!company || !company.branch_id) {
-      setMessage('企業または支店情報が確認できません。')
-      return
-    }
-
-    setSaving(true)
-    setMessage('')
-
-    const targetMonthDate = `${targetMonth}-01`
-
-    const payload = {
-      branch_id: company.branch_id,
-      company_id: company.id,
-      target_month: targetMonthDate,
-      start_headcount: Number(form.start_headcount || 0),
-      headcount_plan: Number(form.headcount_plan || 0),
-      memo: form.memo || null,
-    }
-
-    const { error } = await supabase
-      .from('company_monthly_headcounts')
-      .upsert(payload, {
-        onConflict: 'branch_id,company_id,target_month',
+  const mapRows = useMemo(() => {
+    return companies.map((company) => {
+      const currentStaff = currentStaffList.filter((staff) => {
+        return staff.company_id === company.id
       })
 
-    if (error) {
-      setMessage(`企業別人数の保存に失敗しました：${error.message}`)
-      setSaving(false)
-      return
-    }
+      const workingStaff = currentStaff.filter((staff) => staff.employment_status === '就業中')
+      const leaveStaff = currentStaff.filter((staff) => staff.employment_status === '休職中')
+      const plannedExitStaff = currentStaff.filter((staff) => staff.employment_status === '退職予定')
 
-    setMessage('企業別人数を保存しました。')
-    cancelEdit()
-    await fetchMapData()
-    setSaving(false)
-  }
-
-const mapRows = useMemo(() => {
-  return companies.map((company) => {
-    const currentStaff = currentStaffList.filter((staff) => {
-      return staff.company_id === company.id
+      return {
+        company,
+        currentStaff,
+        workingStaff,
+        leaveStaff,
+        plannedExitStaff,
+      }
     })
+  }, [companies, currentStaffList])
+
+  const summary = useMemo(() => {
+    const workingCount = currentStaffList.filter((staff) => staff.employment_status === '就業中').length
+    const leaveCount = currentStaffList.filter((staff) => staff.employment_status === '休職中').length
+    const plannedExitCount = currentStaffList.filter((staff) => staff.employment_status === '退職予定').length
 
     return {
-      company,
-      currentStaff,
+      companyCount: companies.length,
+      staffCount: currentStaffList.length,
+      workingCount,
+      leaveCount,
+      plannedExitCount,
     }
-  })
-}, [companies, currentStaffList])
+  }, [companies, currentStaffList])
 
   const salesUsersForFilter = useMemo(() => {
     const map = new Map<string, { id: string; name: string }>()
+
     companies.forEach((company) => {
       if (company.sales_user_id && company.sales_users?.name) {
         map.set(company.sales_user_id, {
@@ -423,6 +261,7 @@ const mapRows = useMemo(() => {
         })
       }
     })
+
     return Array.from(map.values())
   }, [companies])
 
@@ -437,8 +276,8 @@ const mapRows = useMemo(() => {
             マップ図
           </h1>
           <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-200">
-            企業別に月初人数・PLAN・入職予定・退職予定・見込みをカード形式で表示します。
-            Excelのマップ図に近い形で、どの企業で人員が増減するかを確認できます。
+            企業ごとに、現在就業中のスタッフ名をカード形式で表示します。
+            スタッフ名をクリックすると詳細ページへ移動できます。
           </p>
         </section>
 
@@ -526,73 +365,13 @@ const mapRows = useMemo(() => {
           </div>
         </section>
 
-        {editingCompanyId && (
-          <section className="rounded-2xl border border-blue-100 bg-blue-50 p-5 shadow-sm">
-            <div className="mb-4">
-              <h2 className="text-lg font-bold text-slate-900">
-                企業別人数設定
-              </h2>
-              <p className="text-sm text-slate-600">
-                {companies.find((item) => item.id === editingCompanyId)?.company_name ?? '-'} の月初人数・PLANを設定します。
-              </p>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-3">
-              <div>
-                <label className="mb-1 block text-sm font-bold text-slate-700">
-                  月初人数
-                </label>
-                <input
-                  type="number"
-                  value={form.start_headcount}
-                  onChange={(e) => setForm({ ...form, start_headcount: e.target.value })}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-bold text-slate-700">
-                  企業別PLAN
-                </label>
-                <input
-                  type="number"
-                  value={form.headcount_plan}
-                  onChange={(e) => setForm({ ...form, headcount_plan: e.target.value })}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-bold text-slate-700">
-                  メモ
-                </label>
-                <input
-                  value={form.memo}
-                  onChange={(e) => setForm({ ...form, memo: e.target.value })}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                />
-              </div>
-            </div>
-
-            <div className="mt-4 flex gap-2">
-              <button
-                onClick={saveCompanyHeadcount}
-                disabled={saving}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
-              >
-                {saving ? '保存中...' : '保存'}
-              </button>
-
-              <button
-                onClick={cancelEdit}
-                disabled={saving}
-                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 disabled:opacity-50"
-              >
-                キャンセル
-              </button>
-            </div>
-          </section>
-        )}
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <MapMetric label="企業数" value={summary.companyCount} suffix="社" />
+          <MapMetric label="登録スタッフ" value={summary.staffCount} suffix="名" />
+          <MapMetric label="就業中" value={summary.workingCount} suffix="名" />
+          <MapMetric label="休職中" value={summary.leaveCount} suffix="名" />
+          <MapMetric label="退職予定" value={summary.plannedExitCount} suffix="名" />
+        </section>
 
         {viewMode === 'card' ? (
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -600,7 +379,6 @@ const mapRows = useMemo(() => {
               <CompanyMapCard
                 key={row.company.id}
                 row={row}
-                onEdit={() => startEditCompany(row.company.id)}
               />
             ))}
 
@@ -613,22 +391,16 @@ const mapRows = useMemo(() => {
         ) : (
           <section className="rounded-2xl bg-white p-5 shadow-sm">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1200px] text-sm tabular-nums">
+              <table className="w-full min-w-[1100px] text-sm">
                 <thead>
                   <tr className="border-b bg-slate-100 text-left">
                     <th className="px-3 py-2">支店</th>
                     <th className="px-3 py-2">企業</th>
                     <th className="px-3 py-2">担当</th>
-                    <th className="px-3 py-2 text-right">PLAN</th>
-                    <th className="px-3 py-2 text-right">月初</th>
-                    <th className="px-3 py-2 text-right">入職確定</th>
-                    <th className="px-3 py-2 text-right">退職確定</th>
-                    <th className="px-3 py-2 text-right">確定着地</th>
-                    <th className="px-3 py-2 text-right">A</th>
-                    <th className="px-3 py-2 text-right">B</th>
-                    <th className="px-3 py-2 text-right">C</th>
-                    <th className="px-3 py-2 text-right">A+B着地</th>
-                    <th className="px-3 py-2 text-right">PLAN差</th>
+                    <th className="px-3 py-2 text-right">就業中</th>
+                    <th className="px-3 py-2 text-right">休職中</th>
+                    <th className="px-3 py-2 text-right">退職予定</th>
+                    <th className="px-3 py-2">スタッフ名</th>
                     <th className="px-3 py-2">操作</th>
                   </tr>
                 </thead>
@@ -638,20 +410,48 @@ const mapRows = useMemo(() => {
                       <td className="px-3 py-2">{row.company.branches?.branch_name ?? '-'}</td>
                       <td className="px-3 py-2 font-bold text-slate-900">{row.company.company_name}</td>
                       <td className="px-3 py-2">{row.company.sales_users?.name ?? '-'}</td>
+                      <td className="px-3 py-2 text-right font-bold">{row.workingStaff.length}</td>
+                      <td className="px-3 py-2 text-right">{row.leaveStaff.length}</td>
+                      <td className="px-3 py-2 text-right text-red-600">{row.plannedExitStaff.length}</td>
                       <td className="px-3 py-2">
-                        <button
-                          onClick={() => startEditCompany(row.company.id)}
-                          className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700"
-                        >
-                          人数設定
-                        </button>
+                        {row.currentStaff.length === 0 ? (
+                          '-'
+                        ) : (
+                          <div className="flex flex-wrap gap-1.5">
+                            {row.currentStaff.map((staff) => (
+                              <Link
+                                key={staff.id}
+                                href={`/admin/staff/${staff.id}`}
+                                className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-bold text-slate-700 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+                              >
+                                {staff.staff_name}
+                              </Link>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex gap-2">
+                          <Link
+                            href="/admin/staff/transfer"
+                            className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700"
+                          >
+                            配置変更
+                          </Link>
+                          <Link
+                            href="/admin/staff/current"
+                            className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-slate-700"
+                          >
+                            管理
+                          </Link>
+                        </div>
                       </td>
                     </tr>
                   ))}
 
                   {mapRows.length === 0 && (
                     <tr>
-                      <td colSpan={14} className="px-3 py-6 text-center text-slate-500">
+                      <td colSpan={8} className="px-3 py-6 text-center text-slate-500">
                         表示対象の企業がありません。
                       </td>
                     </tr>
@@ -670,30 +470,17 @@ function MapMetric({
   label,
   value,
   suffix,
-  signed = false,
 }: {
   label: string
   value: number
   suffix?: string
-  signed?: boolean
 }) {
-  const isMinus = value < 0
-  const isPlus = value > 0
-
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <p className="text-sm font-bold text-slate-500">
         {label}
       </p>
-      <p
-        className={[
-          'mt-2 text-3xl font-black tracking-tight',
-          signed && isMinus ? 'text-red-600' : '',
-          signed && isPlus ? 'text-blue-600' : '',
-          !signed ? 'text-slate-900' : '',
-        ].join(' ')}
-      >
-        {signed && isPlus ? '+' : ''}
+      <p className="mt-2 text-3xl font-black tracking-tight text-slate-900">
         {value}
         {suffix && <span className="ml-1 text-sm font-bold text-slate-500">{suffix}</span>}
       </p>
@@ -703,13 +490,14 @@ function MapMetric({
 
 function CompanyMapCard({
   row,
-  onEdit,
 }: {
   row: {
     company: Company
     currentStaff: CurrentStaff[]
+    workingStaff: CurrentStaff[]
+    leaveStaff: CurrentStaff[]
+    plannedExitStaff: CurrentStaff[]
   }
-  onEdit: () => void
 }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
@@ -728,18 +516,33 @@ function CompanyMapCard({
           </p>
         </div>
 
-<Link
-  href="/admin/staff/current"
-  className="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100"
->
-  スタッフ管理
-</Link>
+        <div className="flex shrink-0 flex-col gap-2">
+          <Link
+            href="/admin/staff/transfer"
+            className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-center text-xs font-bold text-blue-700 hover:bg-blue-100"
+          >
+            配置変更
+          </Link>
+
+          <Link
+            href="/admin/staff/current"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-center text-xs font-bold text-slate-700 hover:bg-slate-100"
+          >
+            管理
+          </Link>
+        </div>
+      </div>
+
+      <div className="mb-4 grid grid-cols-3 gap-2">
+        <StaffCount label="就業中" value={row.workingStaff.length} />
+        <StaffCount label="休職中" value={row.leaveStaff.length} />
+        <StaffCount label="退職予定" value={row.plannedExitStaff.length} danger />
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
         <div className="mb-2 flex items-center justify-between">
           <p className="text-xs font-black text-slate-700">
-            就業中スタッフ
+            スタッフ
           </p>
 
           <span className="rounded-full bg-white px-2 py-0.5 text-xs font-bold text-slate-600">
@@ -754,12 +557,20 @@ function CompanyMapCard({
         ) : (
           <div className="flex flex-wrap gap-1.5">
             {row.currentStaff.map((staff) => (
-              <span
+              <Link
                 key={staff.id}
-                className="rounded-full border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-slate-700"
+                href={`/admin/staff/${staff.id}`}
+                className={[
+                  'rounded-full border px-2 py-1 text-xs font-bold transition',
+                  staff.employment_status === '退職予定'
+                    ? 'border-red-100 bg-red-50 text-red-700 hover:bg-red-100'
+                    : staff.employment_status === '休職中'
+                      ? 'border-yellow-100 bg-yellow-50 text-yellow-700 hover:bg-yellow-100'
+                      : 'border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700',
+                ].join(' ')}
               >
                 {staff.staff_name}
-              </span>
+              </Link>
             ))}
           </div>
         )}
@@ -768,59 +579,21 @@ function CompanyMapCard({
   )
 }
 
-function SmallMetric({
+function StaffCount({
   label,
   value,
-  tone = 'normal',
+  danger = false,
 }: {
   label: string
   value: number
-  tone?: 'normal' | 'blue' | 'red' | 'bold'
+  danger?: boolean
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white/80 p-3">
-      <p className="text-xs font-bold text-slate-500">{label}</p>
-      <p
-        className={[
-          'mt-1 text-xl font-black',
-          tone === 'blue' ? 'text-blue-700' : '',
-          tone === 'red' ? 'text-red-700' : '',
-          tone === 'bold' || tone === 'normal' ? 'text-slate-900' : '',
-        ].join(' ')}
-      >
-        {value}
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-center">
+      <p className="text-xs font-bold text-slate-500">
+        {label}
       </p>
-    </div>
-  )
-}
-
-function Pill({
-  label,
-  value,
-  color,
-  signed = false,
-}: {
-  label: string
-  value: number
-  color: 'green' | 'yellow' | 'orange' | 'red' | 'blue'
-  signed?: boolean
-}) {
-  const className =
-    color === 'green'
-      ? 'bg-green-50 text-green-700 border-green-100'
-      : color === 'yellow'
-        ? 'bg-yellow-50 text-yellow-700 border-yellow-100'
-        : color === 'orange'
-          ? 'bg-orange-50 text-orange-700 border-orange-100'
-          : color === 'red'
-            ? 'bg-red-50 text-red-700 border-red-100'
-            : 'bg-blue-50 text-blue-700 border-blue-100'
-
-  return (
-    <div className={['rounded-xl border px-3 py-2 text-center', className].join(' ')}>
-      <p className="text-xs font-bold">{label}</p>
-      <p className="mt-0.5 text-lg font-black">
-        {signed && value > 0 ? '+' : ''}
+      <p className={['mt-1 text-xl font-black', danger && value > 0 ? 'text-red-600' : 'text-slate-900'].join(' ')}>
         {value}
       </p>
     </div>
