@@ -62,6 +62,12 @@ const navItems = [
   href: '/admin/staff/import',
   roles: ['admin', 'manager', 'user'],
 },
+{
+  label: 'スタッフ出力',
+  description: '配置表・履歴をExcel出力',
+  href: '/admin/staff/export',
+  roles: ['admin', 'manager', 'user'],
+},
 ]
 
 function isActivePath(pathname: string, href: string) {
