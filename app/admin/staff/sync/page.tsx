@@ -25,15 +25,9 @@ type EntryPlan = {
   entry_date: string | null
   certainty_rank: string | null
   status: string | null
-  companies?: {
-    company_name: string
-  } | null
-  sales_users?: {
-    name: string
-  } | null
-  branches?: {
-    branch_name: string
-  } | null
+  companies?: { company_name: string } | { company_name: string }[] | null
+  sales_users?: { name: string } | { name: string }[] | null
+  branches?: { branch_name: string } | { branch_name: string }[] | null
 }
 
 type ExitPlan = {
@@ -43,16 +37,11 @@ type ExitPlan = {
   sales_user_id: string | null
   company_id: string | null
   exit_date: string | null
+  exit_reason: string | null
   status: string | null
-  companies?: {
-    company_name: string
-  } | null
-  sales_users?: {
-    name: string
-  } | null
-  branches?: {
-    branch_name: string
-  } | null
+  companies?: { company_name: string } | { company_name: string }[] | null
+  sales_users?: { name: string } | { name: string }[] | null
+  branches?: { branch_name: string } | { branch_name: string }[] | null
 }
 
 type CurrentStaff = {
@@ -64,9 +53,15 @@ type CurrentStaff = {
   start_date: string | null
   employment_status: string | null
   planned_exit_date: string | null
+  actual_exit_date: string | null
+  exit_reason: string | null
+  memo: string | null
   is_active: boolean | null
   source_entry_plan_id: string | null
   source_exit_plan_id: string | null
+  branches?: { branch_name: string } | { branch_name: string }[] | null
+  companies?: { company_name: string } | { company_name: string }[] | null
+  sales_users?: { name: string } | { name: string }[] | null
 }
 
 function getCurrentMonth() {
@@ -74,6 +69,14 @@ function getCurrentMonth() {
   const y = now.getFullYear()
   const m = String(now.getMonth() + 1).padStart(2, '0')
   return `${y}-${m}`
+}
+
+function today() {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
 }
 
 function getMonthRange(month: string) {
@@ -91,6 +94,12 @@ function getMonthRange(month: string) {
 
 function normalizeText(value: string | null | undefined) {
   return String(value ?? '').normalize('NFKC').trim()
+}
+
+function relationName(value: any, key: string) {
+  if (!value) return '-'
+  if (Array.isArray(value)) return value[0]?.[key] ?? '-'
+  return value[key] ?? '-'
 }
 
 function isConfirmedEntry(plan: EntryPlan) {
@@ -117,6 +126,13 @@ export default function StaffSyncPage() {
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
   const [syncing, setSyncing] = useState(false)
+
+  const [selectedStaff, setSelectedStaff] = useState<CurrentStaff | null>(null)
+  const [closeForm, setCloseForm] = useState({
+    actual_exit_date: today(),
+    exit_reason: '',
+    memo: '',
+  })
 
   useEffect(() => {
     initialize()
@@ -218,6 +234,7 @@ export default function StaffSyncPage() {
         sales_user_id,
         company_id,
         exit_date,
+        exit_reason,
         status,
         companies(company_name),
         sales_users(name),
@@ -237,10 +254,17 @@ export default function StaffSyncPage() {
         start_date,
         employment_status,
         planned_exit_date,
+        actual_exit_date,
+        exit_reason,
+        memo,
         is_active,
         source_entry_plan_id,
-        source_exit_plan_id
+        source_exit_plan_id,
+        branches(branch_name),
+        companies(company_name),
+        sales_users(name)
       `)
+      .order('staff_name', { ascending: true })
 
     if (currentRole.role !== 'admin' && currentRole.branch_id) {
       branchQuery = branchQuery.eq('id', currentRole.branch_id)
@@ -283,7 +307,7 @@ export default function StaffSyncPage() {
     setBranches((branchResult.data ?? []) as Branch[])
     setEntryPlans((entryResult.data ?? []) as unknown as EntryPlan[])
     setExitPlans((exitResult.data ?? []) as unknown as ExitPlan[])
-    setCurrentStaff((staffResult.data ?? []) as CurrentStaff[])
+    setCurrentStaff((staffResult.data ?? []) as unknown as CurrentStaff[])
 
     setLoading(false)
   }
@@ -320,14 +344,20 @@ export default function StaffSyncPage() {
           staff.company_id === plan.company_id &&
           normalizeText(staff.staff_name) === normalizeText(plan.worker_name) &&
           staff.is_active !== false &&
-          staff.employment_status !== '終了'
+          staff.employment_status !== '終了' &&
+          staff.employment_status !== '退職予定'
         )
       })
+    })
+
+    const closeTargets = currentStaff.filter((staff) => {
+      return staff.employment_status === '退職予定' && staff.is_active !== false
     })
 
     return {
       entryTargets,
       exitTargets,
+      closeTargets,
     }
   }, [entryPlans, exitPlans, currentStaff])
 
@@ -348,6 +378,8 @@ export default function StaffSyncPage() {
       start_date: plan.entry_date,
       employment_status: '就業中',
       planned_exit_date: null,
+      actual_exit_date: null,
+      exit_reason: null,
       memo: '入職予定から自動反映',
       is_active: true,
       source_entry_plan_id: plan.id,
@@ -397,12 +429,13 @@ export default function StaffSyncPage() {
           employment_status: '退職予定',
           planned_exit_date: plan.exit_date,
           source_exit_plan_id: plan.id,
+          exit_reason: plan.exit_reason || null,
           updated_at: new Date().toISOString(),
         })
         .eq('id', targetStaff.id)
 
       if (error) {
-        setMessage(`退職反映に失敗しました：${error.message}`)
+        setMessage(`退職予定反映に失敗しました：${error.message}`)
         setSyncing(false)
         return
       }
@@ -415,6 +448,92 @@ export default function StaffSyncPage() {
     setSyncing(false)
   }
 
+  function openCloseModal(staff: CurrentStaff) {
+    setSelectedStaff(staff)
+    setCloseForm({
+      actual_exit_date: staff.planned_exit_date || today(),
+      exit_reason: staff.exit_reason || '',
+      memo: staff.memo || '',
+    })
+  }
+
+  function closeModal() {
+    setSelectedStaff(null)
+    setCloseForm({
+      actual_exit_date: today(),
+      exit_reason: '',
+      memo: '',
+    })
+  }
+
+  async function handleCloseStaff() {
+    if (!selectedStaff || !currentRole) return
+
+    if (!closeForm.actual_exit_date) {
+      setMessage('終了日を入力してください。')
+      return
+    }
+
+    setSyncing(true)
+    setMessage('')
+
+    const { error } = await supabase
+      .from('current_staff_assignments')
+      .update({
+        employment_status: '終了',
+        actual_exit_date: closeForm.actual_exit_date,
+        planned_exit_date: selectedStaff.planned_exit_date || closeForm.actual_exit_date,
+        exit_reason: closeForm.exit_reason || null,
+        memo: closeForm.memo || null,
+        is_active: false,
+        exit_processed_at: new Date().toISOString(),
+        exit_processed_by: currentRole.user_id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', selectedStaff.id)
+
+    if (error) {
+      setMessage(`終了処理に失敗しました：${error.message}`)
+      setSyncing(false)
+      return
+    }
+
+    setMessage(`${selectedStaff.staff_name} さんを終了処理しました。マップ図からは非表示になります。`)
+    closeModal()
+    await fetchData()
+    setSyncing(false)
+  }
+
+  async function handleBackToWorking(staff: CurrentStaff) {
+    const ok = window.confirm(`${staff.staff_name} さんを就業中に戻しますか？`)
+    if (!ok) return
+
+    setSyncing(true)
+    setMessage('')
+
+    const { error } = await supabase
+      .from('current_staff_assignments')
+      .update({
+        employment_status: '就業中',
+        actual_exit_date: null,
+        exit_processed_at: null,
+        exit_processed_by: null,
+        is_active: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', staff.id)
+
+    if (error) {
+      setMessage(`就業中への戻しに失敗しました：${error.message}`)
+      setSyncing(false)
+      return
+    }
+
+    setMessage(`${staff.staff_name} さんを就業中に戻しました。`)
+    await fetchData()
+    setSyncing(false)
+  }
+
   return (
     <div className="p-4 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
@@ -423,11 +542,11 @@ export default function StaffSyncPage() {
             Staff Sync
           </p>
           <h1 className="mt-2 text-3xl font-black tracking-tight md:text-4xl">
-            入退職予定からスタッフ反映
+            スタッフ反映・終了処理
           </h1>
           <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-200">
-            入職確定者を就業中スタッフへ追加し、退職確定者を退職予定として反映します。
-            マップ図のスタッフ表示を最新化するための確認画面です。
+            入職確定者の追加、退職予定への反映、退職予定スタッフの終了処理をこの画面でまとめて行います。
+            マップ図のスタッフ表示を最新化するための統合画面です。
           </p>
         </section>
 
@@ -470,7 +589,7 @@ export default function StaffSyncPage() {
               </select>
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button
                 onClick={fetchData}
                 disabled={loading}
@@ -488,9 +607,9 @@ export default function StaffSyncPage() {
               <button
                 onClick={syncExits}
                 disabled={syncing || syncTargets.exitTargets.length === 0}
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
+                className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
               >
-                退職を反映
+                退職予定に反映
               </button>
             </div>
           </div>
@@ -498,9 +617,9 @@ export default function StaffSyncPage() {
 
         <section className="grid gap-4 md:grid-cols-4">
           <SummaryCard label="入職反映待ち" value={syncTargets.entryTargets.length} suffix="名" />
-          <SummaryCard label="退職反映待ち" value={syncTargets.exitTargets.length} suffix="名" />
-          <SummaryCard label="入職確定数" value={entryPlans.filter(isConfirmedEntry).length} suffix="名" />
-          <SummaryCard label="就業中スタッフ登録" value={currentStaff.filter((staff) => staff.is_active !== false).length} suffix="名" />
+          <SummaryCard label="退職予定反映待ち" value={syncTargets.exitTargets.length} suffix="名" />
+          <SummaryCard label="終了処理待ち" value={syncTargets.closeTargets.length} suffix="名" danger={syncTargets.closeTargets.length > 0} />
+          <SummaryCard label="スタッフ登録" value={currentStaff.filter((staff) => staff.is_active !== false).length} suffix="名" />
         </section>
 
         <section className="grid gap-6 xl:grid-cols-2">
@@ -510,28 +629,208 @@ export default function StaffSyncPage() {
             rows={syncTargets.entryTargets.map((plan) => ({
               id: plan.id,
               staffName: plan.worker_name ?? '-',
-              branchName: plan.branches?.branch_name ?? '-',
-              companyName: plan.companies?.company_name ?? '-',
-              salesUserName: plan.sales_users?.name ?? '-',
+              branchName: relationName(plan.branches, 'branch_name'),
+              companyName: relationName(plan.companies, 'company_name'),
+              salesUserName: relationName(plan.sales_users, 'name'),
               date: plan.entry_date ?? '-',
               status: plan.status ?? '-',
             }))}
           />
 
           <TargetList
-            title="退職反映待ち"
+            title="退職予定反映待ち"
             description="就業中スタッフに登録済みで、退職予定への反映が必要な退職確定者です。"
             rows={syncTargets.exitTargets.map((plan) => ({
               id: plan.id,
               staffName: plan.worker_name ?? '-',
-              branchName: plan.branches?.branch_name ?? '-',
-              companyName: plan.companies?.company_name ?? '-',
-              salesUserName: plan.sales_users?.name ?? '-',
+              branchName: relationName(plan.branches, 'branch_name'),
+              companyName: relationName(plan.companies, 'company_name'),
+              salesUserName: relationName(plan.sales_users, 'name'),
               date: plan.exit_date ?? '-',
               status: plan.status ?? '-',
             }))}
           />
         </section>
+
+        <section className="rounded-2xl bg-white p-5 shadow-sm">
+          <div className="mb-4">
+            <h2 className="text-lg font-bold text-slate-900">
+              終了処理待ち
+            </h2>
+            <p className="text-sm text-slate-500">
+              退職予定になっているスタッフを、実際の終了日で終了処理します。
+            </p>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[900px] text-sm">
+              <thead>
+                <tr className="border-b bg-slate-100 text-left">
+                  <th className="px-3 py-2">支店</th>
+                  <th className="px-3 py-2">企業</th>
+                  <th className="px-3 py-2">スタッフ名</th>
+                  <th className="px-3 py-2">担当</th>
+                  <th className="px-3 py-2">退職予定日</th>
+                  <th className="px-3 py-2">状態</th>
+                  <th className="px-3 py-2">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {syncTargets.closeTargets.map((staff) => (
+                  <tr key={staff.id} className="border-b hover:bg-slate-50">
+                    <td className="px-3 py-2">{relationName(staff.branches, 'branch_name')}</td>
+                    <td className="px-3 py-2">{relationName(staff.companies, 'company_name')}</td>
+                    <td className="px-3 py-2 font-bold text-slate-900">{staff.staff_name}</td>
+                    <td className="px-3 py-2">{relationName(staff.sales_users, 'name')}</td>
+                    <td className="px-3 py-2">{staff.planned_exit_date ?? '-'}</td>
+                    <td className="px-3 py-2">
+                      <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-bold text-red-700">
+                        {staff.employment_status}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">
+                      <button
+                        onClick={() => openCloseModal(staff)}
+                        className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs font-bold text-red-700"
+                      >
+                        終了処理
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+
+                {syncTargets.closeTargets.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-3 py-6 text-center text-slate-500">
+                      終了処理待ちデータはありません。
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="rounded-2xl bg-white p-5 shadow-sm">
+          <div className="mb-4">
+            <h2 className="text-lg font-bold text-slate-900">
+              終了済みスタッフ
+            </h2>
+            <p className="text-sm text-slate-500">
+              誤って終了した場合は、就業中へ戻せます。
+            </p>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[900px] text-sm">
+              <thead>
+                <tr className="border-b bg-slate-100 text-left">
+                  <th className="px-3 py-2">支店</th>
+                  <th className="px-3 py-2">企業</th>
+                  <th className="px-3 py-2">スタッフ名</th>
+                  <th className="px-3 py-2">終了日</th>
+                  <th className="px-3 py-2">終了理由</th>
+                  <th className="px-3 py-2">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {currentStaff.filter((staff) => staff.employment_status === '終了').map((staff) => (
+                  <tr key={staff.id} className="border-b hover:bg-slate-50">
+                    <td className="px-3 py-2">{relationName(staff.branches, 'branch_name')}</td>
+                    <td className="px-3 py-2">{relationName(staff.companies, 'company_name')}</td>
+                    <td className="px-3 py-2 font-bold text-slate-900">{staff.staff_name}</td>
+                    <td className="px-3 py-2">{staff.actual_exit_date ?? '-'}</td>
+                    <td className="px-3 py-2">{staff.exit_reason ?? '-'}</td>
+                    <td className="px-3 py-2">
+                      <button
+                        onClick={() => handleBackToWorking(staff)}
+                        className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700"
+                      >
+                        就業中に戻す
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+
+                {currentStaff.filter((staff) => staff.employment_status === '終了').length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-6 text-center text-slate-500">
+                      終了済みスタッフはありません。
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {selectedStaff && (
+          <section className="rounded-2xl border border-red-100 bg-red-50 p-5 shadow-sm">
+            <div className="mb-4">
+              <h2 className="text-lg font-bold text-slate-900">
+                終了処理
+              </h2>
+              <p className="text-sm text-slate-600">
+                {selectedStaff.staff_name} さんを終了処理します。
+              </p>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              <div>
+                <label className="mb-1 block text-sm font-bold text-slate-700">
+                  実際の終了日
+                </label>
+                <input
+                  type="date"
+                  value={closeForm.actual_exit_date}
+                  onChange={(e) => setCloseForm({ ...closeForm, actual_exit_date: e.target.value })}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-bold text-slate-700">
+                  終了理由
+                </label>
+                <input
+                  value={closeForm.exit_reason}
+                  onChange={(e) => setCloseForm({ ...closeForm, exit_reason: e.target.value })}
+                  placeholder="例：契約満了"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-bold text-slate-700">
+                  メモ
+                </label>
+                <input
+                  value={closeForm.memo}
+                  onChange={(e) => setCloseForm({ ...closeForm, memo: e.target.value })}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={handleCloseStaff}
+                disabled={syncing}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
+              >
+                終了確定
+              </button>
+
+              <button
+                onClick={closeModal}
+                disabled={syncing}
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 disabled:opacity-50"
+              >
+                キャンセル
+              </button>
+            </div>
+          </section>
+        )}
       </div>
     </div>
   )
@@ -541,17 +840,19 @@ function SummaryCard({
   label,
   value,
   suffix,
+  danger = false,
 }: {
   label: string
   value: number
   suffix?: string
+  danger?: boolean
 }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <p className="text-sm font-bold text-slate-500">
         {label}
       </p>
-      <p className="mt-2 text-3xl font-black text-slate-900">
+      <p className={['mt-2 text-3xl font-black', danger ? 'text-red-600' : 'text-slate-900'].join(' ')}>
         {value}
         {suffix && <span className="ml-1 text-sm font-bold text-slate-500">{suffix}</span>}
       </p>
