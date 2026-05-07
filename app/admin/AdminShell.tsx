@@ -20,6 +20,12 @@ const navItems = [
   { label: '月次入力', description: '入職・退職・日次実績', href: '/admin/monthly-headcount', roles: ['admin', 'manager', 'user'] },
   { label: '支店別', description: '全支店ダッシュボード', href: '/admin/monthly-headcount/dashboard', roles: ['admin', 'manager'] },
   { label: '集計', description: '陣立て表・個人別実績', href: '/admin/monthly-headcount/report', roles: ['admin', 'manager', 'user'] },
+  {
+  label: 'マップ図',
+  description: '企業別の人員増減マップ',
+  href: '/admin/map',
+  roles: ['admin', 'manager', 'user'],
+},
   { label: '一覧・編集', description: '登録内容の確認・修正', href: '/admin/monthly-headcount/list', roles: ['admin', 'manager', 'user'] },
   { label: '支店マスタ', description: '支店の登録・編集', href: '/admin/masters/branches', roles: ['admin'] },
   { label: '担当者マスタ', description: '営業担当者の登録・編集', href: '/admin/masters/sales-users', roles: ['admin', 'manager'] },
