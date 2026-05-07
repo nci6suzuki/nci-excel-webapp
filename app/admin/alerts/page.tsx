@@ -22,8 +22,8 @@ type SalesUser = {
   name: string
   branch_id: string | null
   is_active: boolean | null
-  branches: {
-    branch_name: string | null
+  branches?: {
+    branch_name: string
   } | null
 }
 
@@ -132,14 +132,6 @@ function normalizeText(value: string | null | undefined) {
 
 function isActiveStatus(status: string | null | undefined) {
   return normalizeText(status) !== '取消'
-}
-
-function firstRelation<T>(value: T | T[] | null | undefined): T | null {
-  if (Array.isArray(value)) {
-    return value[0] ?? null
-  }
-
-  return value ?? null
 }
 
 export default function AlertsPage() {
@@ -334,31 +326,12 @@ export default function AlertsPage() {
       return
     }
 
-const normalizedSalesUsers = (salesUserResult.data ?? []).map((row) => ({
-  ...row,
-  branches: firstRelation(row.branches),
-}))
-
-const normalizedEntryPlans = (entryResult.data ?? []).map((row) => ({
-  ...row,
-  companies: firstRelation(row.companies),
-  sales_users: firstRelation(row.sales_users),
-  branches: firstRelation(row.branches),
-}))
-
-const normalizedExitPlans = (exitResult.data ?? []).map((row) => ({
-  ...row,
-  companies: firstRelation(row.companies),
-  sales_users: firstRelation(row.sales_users),
-  branches: firstRelation(row.branches),
-}))
-
-setBranches((branchResult.data ?? []) as Branch[])
-setSalesUsers(normalizedSalesUsers as SalesUser[])
-setMonthlyPlans((monthlyPlanResult.data ?? []) as MonthlyPlan[])
-setEntryPlans(normalizedEntryPlans as EntryPlan[])
-setExitPlans(normalizedExitPlans as ExitPlan[])
-setDailyResults((dailyResult.data ?? []) as DailyResult[])
+    setBranches((branchResult.data ?? []) as Branch[])
+    setSalesUsers((salesUserResult.data ?? []) as SalesUser[])
+    setMonthlyPlans((monthlyPlanResult.data ?? []) as MonthlyPlan[])
+    setEntryPlans((entryResult.data ?? []) as EntryPlan[])
+    setExitPlans((exitResult.data ?? []) as ExitPlan[])
+    setDailyResults((dailyResult.data ?? []) as DailyResult[])
 
     setLoading(false)
   }
