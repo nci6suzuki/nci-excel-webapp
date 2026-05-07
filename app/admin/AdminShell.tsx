@@ -39,7 +39,12 @@ const navItems = [
   href: '/admin/staff/transfer',
   roles: ['admin', 'manager', 'user'],
 },
-
+{
+  label: 'スタッフ検索',
+  description: '個人詳細・履歴確認',
+  href: '/admin/staff',
+  roles: ['admin', 'manager', 'user'],
+},
   { label: '支店マスタ', description: '支店の登録・編集', href: '/admin/masters/branches', roles: ['admin'] },
   { label: '担当者マスタ', description: '営業担当者の登録・編集', href: '/admin/masters/sales-users', roles: ['admin', 'manager'] },
   { label: '企業マスタ', description: '派遣先企業の登録・編集', href: '/admin/masters/companies', roles: ['admin', 'manager'] },
