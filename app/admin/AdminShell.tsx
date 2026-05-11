@@ -167,6 +167,12 @@ const navGroups: NavGroup[] = [
         href: '/admin/users',
         roles: ['admin'],
       },
+      {
+        label: '運用チェック',
+        description: '権限・RLS・不要機能確認',
+        href: '/admin/system-check',
+        roles: ['admin'],
+      },
     ],
   },
 ]
