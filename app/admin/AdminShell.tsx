@@ -159,7 +159,7 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    title: '管理者設定',
+    title: '管理・運用',
     items: [
       {
         label: 'ユーザー管理',
@@ -189,6 +189,12 @@ const navGroups: NavGroup[] = [
   label: 'バックアップ',
   description: '主要データをExcel出力',
   href: '/admin/backup',
+  roles: ['admin'],
+},
+{
+  label: 'Supabase確認',
+  description: 'DB・Auth・RLS最終確認',
+  href: '/admin/supabase-check',
   roles: ['admin'],
 },
     ],
