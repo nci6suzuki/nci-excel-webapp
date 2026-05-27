@@ -185,6 +185,12 @@ const navGroups: NavGroup[] = [
   href: '/admin/manual',
   roles: ['admin', 'manager', 'user'],
 },
+{
+  label: 'バックアップ',
+  description: '主要データをExcel出力',
+  href: '/admin/backup',
+  roles: ['admin'],
+},
     ],
   },
 ]
