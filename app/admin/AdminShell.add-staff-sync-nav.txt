@@ -1,8 +1,0 @@
-AdminShell.tsx の navItems に以下を追加してください。
-
-{
-  label: 'スタッフ反映',
-  description: '入退職予定からマップ図へ反映',
-  href: '/admin/staff/sync',
-  roles: ['admin', 'manager', 'user'],
-},

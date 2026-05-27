@@ -1,8 +1,0 @@
-AdminShell.tsx の navGroups の「管理者設定」items に以下を追加してください。
-
-{
-  label: 'バックアップ',
-  description: '主要データをExcel出力',
-  href: '/admin/backup',
-  roles: ['admin'],
-},

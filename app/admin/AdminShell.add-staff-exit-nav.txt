@@ -1,8 +1,0 @@
-AdminShell.tsx の navItems に以下を追加してください。
-
-{
-  label: '終了処理',
-  description: '退職予定スタッフを終了',
-  href: '/admin/staff/exit',
-  roles: ['admin', 'manager', 'user'],
-},

@@ -1,8 +1,0 @@
-AdminShell.tsx の navItems に以下を追加してください。
-
-{
-  label: '就業中スタッフ',
-  description: 'マップ図に表示するスタッフ',
-  href: '/admin/staff/current',
-  roles: ['admin', 'manager', 'user'],
-},

@@ -1,8 +1,0 @@
-AdminShell.tsx の navItems に以下を追加してください。
-
-{
-  label: 'マップ図',
-  description: '企業別の人員増減マップ',
-  href: '/admin/map',
-  roles: ['admin', 'manager', 'user'],
-},

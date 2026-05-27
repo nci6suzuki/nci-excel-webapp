@@ -1,8 +1,0 @@
-AdminShell.tsx の navItems に以下を追加してください。
-
-{
-  label: '要対応',
-  description: '見学・入退職・実績アラート',
-  href: '/admin/alerts',
-  roles: ['admin', 'manager', 'user'],
-},
