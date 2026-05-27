@@ -179,6 +179,12 @@ const navGroups: NavGroup[] = [
   href: '/admin/deploy-check',
   roles: ['admin'],
 },
+{
+  label: '運用マニュアル',
+  description: '使い方・日次運用・トラブル対応',
+  href: '/admin/manual',
+  roles: ['admin', 'manager', 'user'],
+},
     ],
   },
 ]
