@@ -1,0 +1,8 @@
+AdminShell.tsx の navGroups の「管理者設定」items に以下を追加してください。
+
+{
+  label: '公開前チェック',
+  description: '本番公開・環境変数確認',
+  href: '/admin/deploy-check',
+  roles: ['admin'],
+},

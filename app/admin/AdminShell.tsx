@@ -173,6 +173,12 @@ const navGroups: NavGroup[] = [
         href: '/admin/system-check',
         roles: ['admin'],
       },
+{
+  label: '公開前チェック',
+  description: '本番公開・環境変数確認',
+  href: '/admin/deploy-check',
+  roles: ['admin'],
+},
     ],
   },
 ]
